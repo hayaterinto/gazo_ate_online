@@ -312,8 +312,6 @@
 
     if (!roleHostRadio || !roleGuestRadio || !confirmBtn) return;
 
-    // 答えが表示済み（isRevealed: true）または非確定状態なら変更許可
-    // 役割確定後かつ未表示（isRevealed: false）のときは無効化
     if (!gameState.isRevealed) {
       roleHostRadio.disabled = true;
       roleGuestRadio.disabled = true;
@@ -711,21 +709,29 @@
       if (hostPrevText) hostPrevText.classList.remove('hidden');
       if (guestPrevImg) guestPrevImg.classList.add('hidden');
       if (guestPrevMask) guestPrevMask.classList.add('hidden');
-      if (guestPrevText) guestPrevText.classList.remove('hidden');
+      if (guestPrevText) guestPrevText.style.display = "block";
     }
 
     const viewonlyControls = document.getElementById('viewonly-guest-controls');
 
+    // 画面中央下部の表示ロジック（厳格化）
     if (isHostPerspective) {
+      // 出題者は常に正解キャラ名を表示
       nameEl.innerText = gameState.charName || "";
-    } else if (gameState.isRevealed) {
-      nameEl.innerText = gameState.charName || "";
-      if (viewonlyControls) viewonlyControls.classList.add('hidden');
     } else {
-      const answerText = gameState.guestAnswer ? gameState.guestAnswer.trim() : "";
-      nameEl.innerText = answerText !== "" ? `${answerText}？` : "？";
-      if (viewonlyControls && currentRole === 'viewonly_guest') {
-        viewonlyControls.classList.remove('hidden');
+      // 回答者（または回答者用表示専用画面）の場合
+      if (gameState.isRevealed) {
+        // 答え表示が押されたら正解を表示
+        nameEl.innerText = gameState.charName || "";
+        if (viewonlyControls) viewonlyControls.classList.add('hidden');
+      } else {
+        // 未表示のときは「自分が入力した予想テキスト＋？」または「？」のみ表示（正解データは隠す）
+        const answerText = gameState.guestAnswer ? gameState.guestAnswer.trim() : "";
+        nameEl.innerText = answerText !== "" ? `${answerText}？` : "？";
+        
+        if (viewonlyControls && currentRole === 'viewonly_guest') {
+          viewonlyControls.classList.remove('hidden');
+        }
       }
     }
   }
