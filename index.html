@@ -4,18 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>オンライン無知ネーター</title>
-<!-- PeerJS (WebRTC通信用ライブラリ) の読み込み -->
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <style>
-  :root {
-    --bg-color: #00ff00; /* 初期クロマキー色（緑） */
-  }
+  :root { --bg-color: #00ff00; }
   body {
-    font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", MeiYo, sans-serif;
-    margin: 0;
-    padding: 20px;
-    background-color: #f0f2f5;
-    color: #333;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    margin: 0; padding: 20px;
+    background-color: #f0f2f5; color: #333;
   }
   .container { max-width: 800px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
   h1, h2 { text-align: center; }
@@ -28,200 +23,105 @@
   .card { border: 1px solid #ddd; padding: 15px; border-radius: 6px; margin-top: 15px; background: #fafafa; }
   .hidden { display: none !important; }
 
-  /* Bタブ & Cタブ（ルーム画面）用スタイル */
-  body.room-mode {
-    background-color: var(--bg-color);
-    color: #000;
-  }
-  .control-panel {
-    background: rgba(255, 255, 255, 0.95);
-    padding: 15px;
-    border-radius: 8px;
-    margin-bottom: 20px;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-  }
+  body.room-mode { background-color: var(--bg-color); color: #000; }
+  .control-panel { background: rgba(255, 255, 255, 0.95); padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
   .role-selector { display: flex; gap: 15px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
   .style-box { border: 1px solid #ccc; padding: 10px; border-radius: 6px; margin-top: 10px; background: #fdfdfd; }
   .color-picker-group { display: flex; gap: 15px; align-items: center; flex-wrap: wrap; margin-top: 5px; }
   .color-set { display: flex; align-items: center; gap: 5px; background: #eee; padding: 5px 10px; border-radius: 4px; }
 
-  /* 入力欄とキャラクター（プレビュー）並列レイアウト */
-  .input-with-preview {
-    display: flex;
-    gap: 15px;
-    align-items: flex-start;
-  }
+  .input-with-preview { display: flex; gap: 15px; align-items: flex-start; }
   .input-side { flex: 1; }
   .preview-side {
-    width: 120px;
-    height: 120px;
-    border: 2px dashed #ccc;
-    border-radius: 6px;
-    background: #000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    position: relative;
-    flex-shrink: 0;
+    width: 120px; height: 120px; border: 2px dashed #ccc; border-radius: 6px;
+    background: #000; display: flex; align-items: center; justify-content: center;
+    overflow: hidden; position: relative; flex-shrink: 0;
   }
-  .preview-side img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-  }
+  .preview-side img { max-width: 100%; max-height: 100%; object-fit: contain; }
 
-  /* テキストのスタイル */
-  .styled-text {
-    font-size: 2.5rem;
-    font-weight: 900;
-    text-align: center;
-    margin: 10px 0;
-    display: block;
-    width: 100%;
-    word-break: break-all;
-    min-height: 1.2em;
-  }
+  .styled-text { font-size: 2.5rem; font-weight: 900; text-align: center; margin: 10px 0; display: block; width: 100%; word-break: break-all; min-height: 1.2em; }
   .styled-title { font-size: 1.8rem; }
 
-  /* 参加者表示領域（キャラクター名の下） */
-  .members-display {
-    text-align: center;
-    margin-top: 15px;
-    font-size: 1.5rem;
-    font-weight: 900;
-  }
-  /* 出題者：黒文字 ＋ 白縁取り */
+  .members-display { text-align: center; margin-top: 15px; font-size: 1.5rem; font-weight: 900; }
   .members-display .hosts-line {
     color: #000000;
-    text-shadow:
-      2px 2px 0 #ffffff, -2px 2px 0 #ffffff, 2px -2px 0 #ffffff, -2px -2px 0 #ffffff,
-      2px 0px 0 #ffffff, -2px 0px 0 #ffffff, 0px 2px 0 #ffffff, 0px -2px 0 #ffffff;
+    text-shadow: 2px 2px 0 #fff, -2px 2px 0 #fff, 2px -2px 0 #fff, -2px -2px 0 #fff, 2px 0 0 #fff, -2px 0 0 #fff, 0 2px 0 #fff, 0 -2px 0 #fff;
     margin-bottom: 5px;
   }
-  /* 回答者：白文字 ＋ 黒縁取り */
   .members-display .guests-line {
     color: #ffffff;
-    text-shadow:
-      2px 2px 0 #000000, -2px 2px 0 #000000, 2px -2px 0 #000000, -2px -2px 0 #000000,
-      2px 0px 0 #000000, -2px 0px 0 #000000, 0px 2px 0 #000000, 0px -2px 0 #000000;
+    text-shadow: 2px 2px 0 #000, -2px 2px 0 #000, 2px -2px 0 #000, -2px -2px 0 #000, 2px 0 0 #000, -2px 0 0 #000, 0 2px 0 #000, 0 -2px 0 #000;
   }
 
-  /* 参加者リスト（コントロールパネル用） */
-  .member-list-panel {
-    background: #e9ecef;
-    padding: 8px 12px;
-    border-radius: 6px;
-    margin-bottom: 12px;
-    font-size: 0.9rem;
-  }
+  .member-list-panel { background: #e9ecef; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 0.9rem; }
 
-  /* 額縁＆画像ディスプレイ */
   .frame-container {
-    width: 320px;
-    height: 320px;
-    margin: 20px auto;
-    border: 12px solid #8B4513;
-    border-radius: 8px;
-    box-shadow: inset 0 0 10px #000, 0 5px 15px rgba(0,0,0,0.3);
-    background: #000;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    position: relative;
-    overflow: hidden;
+    width: 320px; height: 320px; margin: 20px auto; border: 12px solid #8B4513; border-radius: 8px;
+    box-shadow: inset 0 0 10px #000, 0 5px 15px rgba(0,0,0,0.3); background: #000;
+    display: flex; justify-content: center; align-items: center; position: relative; overflow: hidden;
   }
-  .frame-container img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-  }
-  .mask-overlay {
-    position: absolute;
-    top: 0; left: 0; width: 100%; height: 100%;
-    background: #000;
-    color: #fff;
-    font-size: 5rem;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-weight: bold;
-  }
-  .status-badge {
-    padding: 5px 10px;
-    border-radius: 4px;
-    font-weight: bold;
-    display: inline-block;
-  }
+  .frame-container img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .mask-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; color: #fff; font-size: 5rem; display: flex; justify-content: center; align-items: center; font-weight: bold; }
+  .status-badge { padding: 5px 10px; border-radius: 4px; font-weight: bold; display: inline-block; }
   .status-seen { background: #d4edda; color: #155724; }
   .status-unseen { background: #f8d7da; color: #721c24; }
 
-  /* 表示専用タブ用コントロールバー */
-  .display-controls {
-    text-align: center;
-    margin-top: 20px;
-  }
+  .display-controls { text-align: center; margin-top: 20px; }
+  .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #dc3545; margin-right: 5px; }
+  .status-dot.online { background: #28a745; }
+  .action-btn { width: 100%; font-size: 1.05rem; padding: 12px; }
+  .btn-create { background: #28a745; }
+  .btn-create:hover { background: #218838; }
 </style>
 </head>
 <body>
 
-<!-- Aタブ: エントランス画面 -->
 <div id="entrance-view" class="container">
   <h1>オンライン無知ネーター</h1>
   <div class="form-group">
     <label>ユーザー名</label>
     <input type="text" id="username-input" placeholder="名前を入力してください">
   </div>
-
   <hr>
-
-  <h2>ルームを作る</h2>
+  
+  <h2>新しいルームを作る（ホスト）</h2>
   <div class="form-group">
     <label>作成するルームID</label>
     <input type="text" id="create-room-id" placeholder="例: room123">
   </div>
-  <button id="btn-create-room">ルームを作成して開く</button>
+  <button id="btn-create-room" class="action-btn btn-create">ルームを作成して開始</button>
 
-  <hr>
+  <hr style="margin-top:25px;">
 
-  <h2>ルームに入る</h2>
+  <h2>既存のルームに入る（参加者）</h2>
   <div class="form-group">
-    <label>検索するルームID</label>
-    <input type="text" id="search-room-id" placeholder="例: room123">
+    <label>参加するルームID</label>
+    <input type="text" id="join-room-id" placeholder="例: room123">
   </div>
-  <button id="btn-search-room">検索</button>
-
-  <div id="search-result" class="card hidden">
-    <p>ホスト名: <strong id="result-host-name">-</strong></p>
-    <button id="btn-join-room">部屋に入る</button>
-  </div>
+  <button id="btn-join-room" class="action-btn">ルームに参加する</button>
 </div>
 
-<!-- Bタブ & Cタブ: ルーム画面 / 表示専用画面 -->
 <div id="room-view" class="hidden">
-  <!-- 操作パネル (Bタブ用) -->
   <div class="control-panel" id="control-panel">
-    <!-- 参加者状況パネル -->
     <div class="member-list-panel">
+      <strong>【通信状態】</strong> <span class="status-dot" id="net-dot"></span><span id="connection-status">オフライン</span><br>
       <strong>【現在の参加者】</strong>
       <div>出題者: <span id="panel-hosts-list">なし</span></div>
       <div>回答者: <span id="panel-guests-list">なし</span></div>
-      <div style="font-size: 0.8rem; color: #666; margin-top: 4px;">接続状態: <span id="connection-status">接続中...</span></div>
     </div>
 
     <div class="role-selector">
       <label>役割選択:</label>
-      <label><input type="radio" name="role" value="host" id="role-host" checked> 出題者</label>
+      <label><input type="radio" name="role" value="host" id="role-host"> 出題者</label>
       <label><input type="radio" name="role" value="guest" id="role-guest"> 回答者</label>
-      <button id="btn-confirm-role" style="padding: 4px 12px; margin-left: 5px;">役割を決定</button>
+      <button id="btn-confirm-role" style="padding: 4px 12px; margin-left: 5px;">役割を確定</button>
 
-      <label style="margin-left: auto;">背景色（クロマキー）:</label>
+      <label style="margin-left: auto;">背景色:</label>
       <input type="color" id="bg-color-picker" value="#00ff00">
       
-      <button id="btn-open-display" style="background:#17a2b8; margin-left:10px;">表示専用タブを開く</button>
+      <button id="btn-open-display" style="background:#17a2b8; margin-left:10px;">表示専用画面を開く</button>
     </div>
 
-    <!-- 出題者コントロール -->
     <div id="host-controls">
       <div style="margin-bottom: 10px;">
         回答者の状態: <span id="seen-status" class="status-badge status-unseen">未閲覧</span>
@@ -234,7 +134,7 @@
             <input type="text" id="host-title-input" placeholder="作品名を入力">
           </div>
           <div class="form-group">
-            <label>キャラクター名（下側表記）</label>
+            <label>キャラクター名（正解）</label>
             <input type="text" id="host-name-input" placeholder="キャラクター名を入力">
           </div>
         </div>
@@ -244,51 +144,30 @@
         </div>
       </div>
       
-      <!-- 作品名スタイル設定 -->
       <div class="style-box">
-        <strong>【作品名の文字・縁取り設定】</strong>
+        <strong>【作品名のスタイル】</strong>
         <div class="color-picker-group">
-          <div class="color-set">
-            <label>文字色:</label>
-            <input type="color" id="title-color-picker" value="#000000">
-          </div>
-          <div class="color-set">
-            <label><input type="checkbox" id="title-enable-s1" checked> 縁取り1</label>
-            <input type="color" id="title-s1-picker" value="#ffffff">
-          </div>
-          <div class="color-set">
-            <label><input type="checkbox" id="title-enable-s2" checked> 縁取り2</label>
-            <input type="color" id="title-s2-picker" value="#000000">
-          </div>
+          <div class="color-set"><label>文字:</label><input type="color" id="title-color-picker" value="#000000"></div>
+          <div class="color-set"><label><input type="checkbox" id="title-enable-s1" checked> 縁1</label><input type="color" id="title-s1-picker" value="#ffffff"></div>
+          <div class="color-set"><label><input type="checkbox" id="title-enable-s2" checked> 縁2</label><input type="color" id="title-s2-picker" value="#000000"></div>
         </div>
       </div>
 
-      <!-- キャラ名スタイル設定 -->
       <div class="style-box">
-        <strong>【キャラクター名の文字・縁取り設定】</strong>
+        <strong>【キャラ名のスタイル】</strong>
         <div class="color-picker-group">
-          <div class="color-set">
-            <label>文字色:</label>
-            <input type="color" id="char-color-picker" value="#000000">
-          </div>
-          <div class="color-set">
-            <label><input type="checkbox" id="char-enable-s1" checked> 縁取り1</label>
-            <input type="color" id="char-s1-picker" value="#ffffff">
-          </div>
-          <div class="color-set">
-            <label><input type="checkbox" id="char-enable-s2" checked> 縁取り2</label>
-            <input type="color" id="char-s2-picker" value="#000000">
-          </div>
+          <div class="color-set"><label>文字:</label><input type="color" id="char-color-picker" value="#000000"></div>
+          <div class="color-set"><label><input type="checkbox" id="char-enable-s1" checked> 縁1</label><input type="color" id="char-s1-picker" value="#ffffff"></div>
+          <div class="color-set"><label><input type="checkbox" id="char-enable-s2" checked> 縁2</label><input type="color" id="char-s2-picker" value="#000000"></div>
         </div>
       </div>
     </div>
 
-    <!-- 回答者コントロール -->
     <div id="guest-controls" class="hidden">
       <div class="input-with-preview">
         <div class="input-side">
           <div class="form-group">
-            <label>作品名（編集可能）</label>
+            <label>作品名（共同編集可）</label>
             <input type="text" id="guest-title-input" placeholder="作品名を入力">
           </div>
           <div class="form-group">
@@ -306,11 +185,10 @@
     </div>
 
     <div style="margin-top: 15px;">
-      <button id="btn-reset" style="background:#dc3545;">リセット</button>
+      <button id="btn-reset" style="background:#dc3545;">全体リセット</button>
     </div>
   </div>
 
-  <!-- メイン表示領域 -->
   <div id="display-area">
     <div id="display-title" class="styled-text styled-title"></div>
     
@@ -335,38 +213,24 @@
 
 <script>
   let peer = null;
-  let connections = {}; // 接続しているピアのリスト
+  let connections = {}; 
   let roomId = "";
   let myUserName = "";
-  let myId = "user_" + Math.random().toString(36).substr(2, 9);
+  let myPeerId = "";
   let currentRole = "host";
   let roomMembers = {};
-  let localBroadcast = new BroadcastChannel('muchinator_local_sync');
+  let localBroadcast = null;
 
   let gameState = {
-    title: "",
-    charName: "",
-    guestAnswer: "",
-    imageSrc: "",
-    isRevealed: false,
-    
-    titleColor: "#000000",
-    titleEnableS1: true,
-    titleS1Color: "#ffffff",
-    titleEnableS2: true,
-    titleS2Color: "#000000",
-
-    charColor: "#000000",
-    charEnableS1: true,
-    charS1Color: "#ffffff",
-    charEnableS2: true,
-    charS2Color: "#000000"
+    title: "", charName: "", guestAnswer: "", imageSrc: "", isRevealed: false,
+    titleColor: "#000000", titleEnableS1: true, titleS1Color: "#ffffff", titleEnableS2: true, titleS2Color: "#000000",
+    charColor: "#000000", charEnableS1: true, charS1Color: "#ffffff", charEnableS2: true, charS2Color: "#000000"
   };
 
   const urlParams = new URLSearchParams(window.location.search);
   const paramRoom = urlParams.get('room');
-  const paramHost = urlParams.get('host');
   const paramUser = urlParams.get('user');
+  const paramRole = urlParams.get('initRole') || 'host';
   const paramViewRole = urlParams.get('viewrole');
 
   if (paramRoom) {
@@ -374,11 +238,14 @@
     document.getElementById('room-view').classList.remove('hidden');
     document.body.classList.add('room-mode');
     
-    roomId = paramRoom;
-    myUserName = paramUser || paramHost || "ゲストユーザー";
+    roomId = paramRoom.toLowerCase().replace(/[^a-z0-9]/g, '');
+    myUserName = paramUser || "匿名ユーザー";
+    currentRole = paramRole;
+    
+    localBroadcast = new BroadcastChannel(`muchinator_${roomId}_sync`);
 
     if (paramViewRole) {
-      document.title = `オンライン無知ネーター - 表示画面（${paramViewRole === 'host' ? '出題者' : '回答者'}）`;
+      document.title = `表示専用 - ${roomId}`;
       document.getElementById('control-panel').classList.add('hidden');
       currentRole = paramViewRole === 'host' ? 'viewonly_host' : 'viewonly_guest';
 
@@ -386,7 +253,6 @@
         document.getElementById('viewonly-guest-controls').classList.remove('hidden');
       }
 
-      // 同一ブラウザの同端末同期
       localBroadcast.onmessage = (e) => {
         if (e.data.type === 'STATE_UPDATE') {
           gameState = { ...gameState, ...e.data.data };
@@ -394,38 +260,68 @@
         } else if (e.data.type === 'MEMBERS_UPDATE') {
           roomMembers = e.data.data;
           updateMembersUI();
+        } else if (e.data.type === 'SYNC_RESPONSE') {
+          gameState = { ...gameState, ...e.data.state };
+          roomMembers = e.data.members;
+          renderUI();
+          updateMembersUI();
         }
       };
+      
+      // 親画面に現在のデータを要求
       localBroadcast.postMessage({ type: 'REQ_LOCAL_SYNC' });
-
     } else {
-      document.title = `オンライン無知ネーター - ルーム: ${roomId} (${myUserName})`;
-      initPeerNet();
+      document.title = `無知ネーター - ルーム: ${roomId}`;
+      
+      if (currentRole === 'host') {
+        document.getElementById('role-host').checked = true;
+        document.getElementById('host-controls').classList.remove('hidden');
+        document.getElementById('guest-controls').classList.add('hidden');
+      } else {
+        document.getElementById('role-guest').checked = true;
+        document.getElementById('host-controls').classList.add('hidden');
+        document.getElementById('guest-controls').classList.remove('hidden');
+      }
+
+      localBroadcast.onmessage = (e) => {
+        if (e.data.type === 'REQ_LOCAL_SYNC') {
+          localBroadcast.postMessage({
+            type: 'SYNC_RESPONSE',
+            state: gameState,
+            members: roomMembers
+          });
+        } else if (e.data.type === 'REVEAL_ACTION') {
+          triggerReveal();
+        }
+      };
+
+      initPeerP2P();
     }
-
     initRoomEvents();
-
   } else {
     initEntranceEvents();
   }
 
-  // P2P ネットワーク初期化
-  function initPeerNet() {
-    const peerId = `muchinator_${roomId}_${myId}`;
-    peer = new Peer(peerId);
+  function initPeerP2P() {
+    const randomHash = Math.random().toString(36).substring(2, 7);
+    myPeerId = `muchin_${roomId}_${randomHash}`;
 
-    peer.on('open', (id) => {
-      updateConnStatus("接続完了");
-      // ホスト用Peerへ接続試行
-      connectToHost();
+    peer = new Peer(myPeerId, {
+      config: {'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }]},
+      debug: 1
+    });
+
+    peer.on('open', () => {
+      updateStatus(true, "オンライン (接続中)");
+      autoConnectHub();
     });
 
     peer.on('connection', (conn) => {
-      setupConnection(conn);
+      bindConnEvents(conn);
     });
 
     peer.on('error', (err) => {
-      console.warn("PeerJS Notification:", err.type);
+      console.warn('PeerJS Notification:', err);
     });
 
     setInterval(() => {
@@ -434,44 +330,39 @@
     }, 2000);
   }
 
-  function updateConnStatus(msg) {
-    const el = document.getElementById('connection-status');
-    if (el) el.innerText = msg;
-  }
-
-  function connectToHost() {
-    const hostPeerId = `muchinator_host_${roomId}`;
+  function autoConnectHub() {
+    const hubId = `muchin_hub_${roomId}`;
     
-    // ホスト権限として接続登録
-    if (currentRole === 'host') {
-      const hostPeer = new Peer(hostPeerId);
-      hostPeer.on('open', () => {
-        updateConnStatus("ホストとして待機中");
-      });
-      hostPeer.on('connection', (conn) => {
-        setupConnection(conn);
-      });
-    } else {
-      const conn = peer.connect(hostPeerId);
-      if (conn) setupConnection(conn);
-    }
+    const hubPeer = new Peer(hubId, {
+      config: {'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }]}
+    });
+
+    hubPeer.on('open', () => {
+      updateStatus(true, "ルーム作成完了 (待機中)");
+      hubPeer.on('connection', (conn) => bindConnEvents(conn));
+    });
+
+    hubPeer.on('error', () => {
+      const conn = peer.connect(hubId);
+      if (conn) bindConnEvents(conn);
+    });
   }
 
-  function setupConnection(conn) {
-    connections[conn.peer] = conn;
-
+  function bindConnEvents(conn) {
     conn.on('open', () => {
-      updateConnStatus("プレイヤー接続中");
+      connections[conn.peer] = conn;
+      updateStatus(true, `他の端末と接続中 (${Object.keys(connections).length}台)`);
       sendPresence();
-      broadcast({ type: 'STATE_UPDATE', data: gameState });
+      conn.send({ type: 'STATE_UPDATE', data: gameState });
     });
 
     conn.on('data', (data) => {
-      handleNetworkMessage(data);
+      handleMessage(data);
     });
 
     conn.on('close', () => {
       delete connections[conn.peer];
+      updateStatus(true, `接続中 (${Object.keys(connections).length}台)`);
     });
   }
 
@@ -481,49 +372,34 @@
         connections[id].send(data);
       }
     }
-    localBroadcast.postMessage(data);
+    if (localBroadcast) {
+      localBroadcast.postMessage(data);
+    }
   }
 
-  function handleNetworkMessage(msg) {
-    const { type, data } = msg;
-    if (type === 'STATE_UPDATE') {
-      gameState = { ...gameState, ...data };
+  function handleMessage(msg) {
+    if (msg.type === 'STATE_UPDATE') {
+      gameState = { ...gameState, ...msg.data };
       renderUI();
-      localBroadcast.postMessage({ type: 'STATE_UPDATE', data: gameState });
-    } else if (type === 'PRESENCE') {
-      roomMembers[msg.id] = {
-        name: msg.name,
-        role: msg.role,
-        time: Date.now()
-      };
+      if (localBroadcast) localBroadcast.postMessage({ type: 'STATE_UPDATE', data: gameState });
+    } else if (msg.type === 'PRESENCE') {
+      roomMembers[msg.id] = { name: msg.name, role: msg.role, time: Date.now() };
       updateMembersUI();
-      localBroadcast.postMessage({ type: 'MEMBERS_UPDATE', data: roomMembers });
-    } else if (type === 'SEEN_NOTIFY') {
-      const seenStatus = document.getElementById('seen-status');
-      if(seenStatus) {
-        seenStatus.innerText = "閲覧済み";
-        seenStatus.className = "status-badge status-seen";
-      }
-    } else if (type === 'RESET_SEEN') {
-      const seenStatus = document.getElementById('seen-status');
-      if(seenStatus) {
-        seenStatus.innerText = "未閲覧";
-        seenStatus.className = "status-badge status-unseen";
-      }
+      if (localBroadcast) localBroadcast.postMessage({ type: 'MEMBERS_UPDATE', data: roomMembers });
+    } else if (msg.type === 'SEEN_NOTIFY') {
+      const el = document.getElementById('seen-status');
+      if (el) { el.innerText = "閲覧済み"; el.className = "status-badge status-seen"; }
+    } else if (msg.type === 'RESET_SEEN') {
+      const el = document.getElementById('seen-status');
+      if (el) { el.innerText = "未閲覧"; el.className = "status-badge status-unseen"; }
     }
   }
 
   function sendPresence() {
     if (currentRole !== 'viewonly_host' && currentRole !== 'viewonly_guest') {
-      const msg = {
-        type: 'PRESENCE',
-        id: myId,
-        name: myUserName,
-        role: currentRole,
-        time: Date.now()
-      };
+      const msg = { type: 'PRESENCE', id: myPeerId, name: myUserName, role: currentRole, time: Date.now() };
       broadcast(msg);
-      roomMembers[myId] = { name: myUserName, role: currentRole, time: Date.now() };
+      roomMembers[myPeerId] = { name: myUserName, role: currentRole, time: Date.now() };
       updateMembersUI();
     }
   }
@@ -532,21 +408,28 @@
     const now = Date.now();
     let updated = false;
     for (const id in roomMembers) {
-      if (now - roomMembers[id].time > 6000) {
+      if (now - roomMembers[id].time > 5000) {
         delete roomMembers[id];
         updated = true;
       }
     }
     if (updated) {
       updateMembersUI();
-      localBroadcast.postMessage({ type: 'MEMBERS_UPDATE', data: roomMembers });
+      if (localBroadcast) localBroadcast.postMessage({ type: 'MEMBERS_UPDATE', data: roomMembers });
+    }
+  }
+
+  function updateStatus(isOnline, text) {
+    const dot = document.getElementById('net-dot');
+    const label = document.getElementById('connection-status');
+    if (dot && label) {
+      if (isOnline) dot.classList.add('online'); else dot.classList.remove('online');
+      label.innerText = text;
     }
   }
 
   function updateMembersUI() {
-    const hosts = [];
-    const guests = [];
-
+    const hosts = []; const guests = [];
     for (const id in roomMembers) {
       const m = roomMembers[id];
       if (m.role === 'host') hosts.push(m.name);
@@ -569,88 +452,72 @@
 
   function initEntranceEvents() {
     document.getElementById('btn-create-room').addEventListener('click', () => {
-      const username = document.getElementById('username-input').value.trim();
-      const rId = document.getElementById('create-room-id').value.trim();
-      if (!username || !rId) return alert('ユーザー名とルームIDを入力してください');
+      const user = document.getElementById('username-input').value.trim() || "ホスト";
+      const room = document.getElementById('create-room-id').value.trim();
+      if (!room) return alert('作成するルームIDを入力してください');
 
-      window.open(`${window.location.pathname}?room=${encodeURIComponent(rId)}&host=${encodeURIComponent(username)}&user=${encodeURIComponent(username)}`, '_blank');
+      window.location.href = `${window.location.pathname}?room=${encodeURIComponent(room)}&user=${encodeURIComponent(user)}&initRole=host`;
     });
 
-    document.getElementById('btn-search-room').addEventListener('click', () => {
-      const rId = document.getElementById('search-room-id').value.trim();
-      if (!rId) return alert('検索するルームIDを入力してください');
+    document.getElementById('btn-join-room').addEventListener('click', () => {
+      const user = document.getElementById('username-input').value.trim() || "回答者";
+      const room = document.getElementById('join-room-id').value.trim();
+      if (!room) return alert('参加するルームIDを入力してください');
 
-      const tempPeer = new Peer();
-      tempPeer.on('open', () => {
-        const conn = tempPeer.connect(`muchinator_host_${rId}`);
-        let found = false;
-
-        conn.on('open', () => {
-          found = true;
-          document.getElementById('result-host-name').innerText = "接続可能";
-          document.getElementById('search-result').classList.remove('hidden');
-          
-          document.getElementById('btn-join-room').onclick = () => {
-            const username = document.getElementById('username-input').value.trim() || "ゲスト";
-            window.open(`${window.location.pathname}?room=${encodeURIComponent(rId)}&user=${encodeURIComponent(username)}`, '_blank');
-            tempPeer.destroy();
-          };
-        });
-
-        setTimeout(() => {
-          if (!found) {
-            alert('部屋が見つかりませんでした。ルームIDが正しく入力されているか確認してください。');
-            tempPeer.destroy();
-          }
-        }, 3000);
-      });
+      window.location.href = `${window.location.pathname}?room=${encodeURIComponent(room)}&user=${encodeURIComponent(user)}&initRole=guest`;
     });
   }
 
   function triggerReveal() {
     gameState.isRevealed = true;
-    lockRoleSelector(false);
     syncState();
     broadcast({ type: 'SEEN_NOTIFY' });
   }
 
-  function initRoomEvents() {
-    const btnOpenDisplay = document.getElementById('btn-open-display');
-    if (btnOpenDisplay) {
-      btnOpenDisplay.addEventListener('click', () => {
-        const viewRoleParam = (currentRole === 'host' || currentRole === 'viewonly_host') ? 'host' : 'guest';
-        window.open(`${window.location.pathname}?room=${encodeURIComponent(roomId)}&viewrole=${viewRoleParam}`, '_blank');
-      });
-    }
-
-    const btnConfirmRole = document.getElementById('btn-confirm-role');
-    if (btnConfirmRole) {
-      btnConfirmRole.addEventListener('click', () => {
-        const selectedRole = document.querySelector('input[name="role"]:checked').value;
-        currentRole = selectedRole;
-
-        if (currentRole === 'host') {
-          document.getElementById('host-controls').classList.remove('hidden');
-          document.getElementById('guest-controls').classList.add('hidden');
-          lockRoleSelector(false);
-        } else {
-          document.getElementById('host-controls').classList.add('hidden');
-          document.getElementById('guest-controls').classList.remove('hidden');
-          if (!gameState.isRevealed) {
-            lockRoleSelector(true);
-          }
+  function compressImage(file, callback) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let w = img.width, h = img.height;
+        const max = 600; 
+        if (w > max || h > max) {
+          if (w > h) { h = Math.round(h * max / w); w = max; }
+          else { w = Math.round(w * max / h); h = max; }
         }
-        sendPresence();
-        renderUI();
-      });
-    }
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        callback(canvas.toDataURL('image/jpeg', 0.7)); 
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
 
-    const bgColorPicker = document.getElementById('bg-color-picker');
-    if (bgColorPicker) {
-      bgColorPicker.addEventListener('input', (e) => {
-        document.body.style.setProperty('--bg-color', e.target.value);
-      });
-    }
+  function initRoomEvents() {
+    document.getElementById('btn-open-display').addEventListener('click', () => {
+      const viewRoleParam = (currentRole === 'host' || currentRole === 'viewonly_host') ? 'host' : 'guest';
+      window.open(`${window.location.pathname}?room=${encodeURIComponent(roomId)}&viewrole=${viewRoleParam}`, '_blank');
+    });
+
+    document.getElementById('btn-confirm-role').addEventListener('click', () => {
+      currentRole = document.querySelector('input[name="role"]:checked').value;
+      if (currentRole === 'host') {
+        document.getElementById('host-controls').classList.remove('hidden');
+        document.getElementById('guest-controls').classList.add('hidden');
+      } else {
+        document.getElementById('host-controls').classList.add('hidden');
+        document.getElementById('guest-controls').classList.remove('hidden');
+      }
+      sendPresence();
+      renderUI();
+    });
+
+    document.getElementById('bg-color-picker').addEventListener('input', (e) => {
+      document.body.style.setProperty('--bg-color', e.target.value);
+    });
 
     const updateStyles = () => {
       gameState.titleColor = document.getElementById('title-color-picker').value;
@@ -668,83 +535,49 @@
       syncState();
     };
 
-    const styleInputs = [
-      'title-color-picker', 'title-enable-s1', 'title-s1-picker', 'title-enable-s2', 'title-s2-picker',
-      'char-color-picker', 'char-enable-s1', 'char-s1-picker', 'char-enable-s2', 'char-s2-picker'
-    ];
-    styleInputs.forEach(id => {
+    ['title-color-picker', 'title-enable-s1', 'title-s1-picker', 'title-enable-s2', 'title-s2-picker',
+     'char-color-picker', 'char-enable-s1', 'char-s1-picker', 'char-enable-s2', 'char-s2-picker'
+    ].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', updateStyles);
     });
 
-    const hostTitle = document.getElementById('host-title-input');
-    if (hostTitle) hostTitle.addEventListener('input', (e) => { gameState.title = e.target.value; syncState(); });
-    
-    const hostName = document.getElementById('host-name-input');
-    if (hostName) hostName.addEventListener('input', (e) => { gameState.charName = e.target.value; syncState(); });
-    
-    const guestTitle = document.getElementById('guest-title-input');
-    if (guestTitle) guestTitle.addEventListener('input', (e) => { gameState.title = e.target.value; syncState(); });
-
-    const guestAnswer = document.getElementById('guest-answer-input');
-    if (guestAnswer) guestAnswer.addEventListener('input', (e) => { gameState.guestAnswer = e.target.value; syncState(); });
+    document.getElementById('host-title-input').addEventListener('input', (e) => { gameState.title = e.target.value; syncState(); });
+    document.getElementById('host-name-input').addEventListener('input', (e) => { gameState.charName = e.target.value; syncState(); });
+    document.getElementById('guest-title-input').addEventListener('input', (e) => { gameState.title = e.target.value; syncState(); });
+    document.getElementById('guest-answer-input').addEventListener('input', (e) => { gameState.guestAnswer = e.target.value; syncState(); });
 
     const dropZone = document.getElementById('drop-zone');
     dropZone.addEventListener('dragover', (e) => e.preventDefault());
     dropZone.addEventListener('drop', (e) => {
       e.preventDefault();
       if (currentRole !== 'host') return;
-
       const file = e.dataTransfer.files[0];
       if (file && file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          gameState.imageSrc = event.target.result;
+        compressImage(file, (dataUrl) => {
+          gameState.imageSrc = dataUrl;
           syncState();
-        };
-        reader.readAsDataURL(file);
+        });
       }
     });
 
-    const btnReveal = document.getElementById('btn-reveal');
-    if (btnReveal) btnReveal.addEventListener('click', triggerReveal);
+    document.getElementById('btn-reveal').addEventListener('click', triggerReveal);
+    
+    document.getElementById('btn-viewonly-reveal').addEventListener('click', () => {
+      if (localBroadcast) {
+        localBroadcast.postMessage({ type: 'REVEAL_ACTION' });
+      }
+    });
 
-    const btnViewonlyReveal = document.getElementById('btn-viewonly-reveal');
-    if (btnViewonlyReveal) btnViewonlyReveal.addEventListener('click', triggerReveal);
-
-    const btnReset = document.getElementById('btn-reset');
-    if (btnReset) {
-      btnReset.addEventListener('click', () => {
-        if (currentRole === 'host' || currentRole === 'viewonly_host') {
-          gameState.title = "";
-          gameState.charName = "";
-          gameState.guestAnswer = "";
-          gameState.imageSrc = "";
-          gameState.isRevealed = false;
-          if (hostTitle) hostTitle.value = "";
-          if (hostName) hostName.value = "";
-          if (guestTitle) guestTitle.value = "";
-          if (guestAnswer) guestAnswer.value = "";
-          broadcast({ type: 'RESET_SEEN' });
-        } else {
-          gameState.isRevealed = false;
-          gameState.guestAnswer = "";
-          if (guestAnswer) guestAnswer.value = "";
-        }
-
-        lockRoleSelector(false);
-        syncState();
-      });
-    }
-  }
-
-  function lockRoleSelector(lock) {
-    const rHost = document.getElementById('role-host');
-    const rGuest = document.getElementById('role-guest');
-    const btnConf = document.getElementById('btn-confirm-role');
-    if (rHost) rHost.disabled = lock;
-    if (rGuest) rGuest.disabled = lock;
-    if (btnConf) btnConf.disabled = lock;
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      gameState.title = ""; gameState.charName = ""; gameState.guestAnswer = ""; gameState.imageSrc = ""; gameState.isRevealed = false;
+      document.getElementById('host-title-input').value = "";
+      document.getElementById('host-name-input').value = "";
+      document.getElementById('guest-title-input').value = "";
+      document.getElementById('guest-answer-input').value = "";
+      broadcast({ type: 'RESET_SEEN' });
+      syncState();
+    });
   }
 
   function syncState() {
@@ -755,50 +588,43 @@
   function generateCleanStrokeCSS(s1Enable, s1Color, s2Enable, s2Color) {
     let shadows = [];
     if (s1Enable) {
-      for (let angle = 0; angle < 360; angle += 22.5) {
+      for (let angle = 0; angle < 360; angle += 30) {
         let rad = angle * Math.PI / 180;
-        let x = (Math.cos(rad) * 3).toFixed(1);
-        let y = (Math.sin(rad) * 3).toFixed(1);
-        shadows.push(`${x}px ${y}px 0 ${s1Color}`);
+        shadows.push(`${(Math.cos(rad)*3).toFixed(1)}px ${(Math.sin(rad)*3).toFixed(1)}px 0 ${s1Color}`);
       }
     }
     if (s2Enable) {
       const radius = s1Enable ? 6 : 3;
-      for (let angle = 0; angle < 360; angle += 15) {
+      for (let angle = 0; angle < 360; angle += 20) {
         let rad = angle * Math.PI / 180;
-        let x = (Math.cos(rad) * radius).toFixed(1);
-        let y = (Math.sin(rad) * radius).toFixed(1);
-        shadows.push(`${x}px ${y}px 0 ${s2Color}`);
+        shadows.push(`${(Math.cos(rad)*radius).toFixed(1)}px ${(Math.sin(rad)*radius).toFixed(1)}px 0 ${s2Color}`);
       }
     }
     return shadows.length > 0 ? shadows.join(', ') : 'none';
   }
 
   function renderUI() {
+    // 1. 作品名の描画
     const titleEl = document.getElementById('display-title');
     titleEl.style.color = gameState.titleColor;
-    titleEl.style.textShadow = generateCleanStrokeCSS(
-      gameState.titleEnableS1, gameState.titleS1Color,
-      gameState.titleEnableS2, gameState.titleS2Color
-    );
-    titleEl.innerText = gameState.title;
+    titleEl.style.textShadow = generateCleanStrokeCSS(gameState.titleEnableS1, gameState.titleS1Color, gameState.titleEnableS2, gameState.titleS2Color);
+    titleEl.innerText = gameState.title || "";
 
+    // 2. キャラクタースタイルの設定
     const nameEl = document.getElementById('display-name');
     nameEl.style.color = gameState.charColor;
-    nameEl.style.textShadow = generateCleanStrokeCSS(
-      gameState.charEnableS1, gameState.charS1Color,
-      gameState.charEnableS2, gameState.charS2Color
-    );
+    nameEl.style.textShadow = generateCleanStrokeCSS(gameState.charEnableS1, gameState.charS1Color, gameState.charEnableS2, gameState.charS2Color);
 
-    const hostTitle = document.getElementById('host-title-input');
-    const hostName = document.getElementById('host-name-input');
-    const guestTitle = document.getElementById('guest-title-input');
-    const guestAnsInput = document.getElementById('guest-answer-input');
-    
-    if (hostTitle && document.activeElement !== hostTitle) hostTitle.value = gameState.title;
-    if (hostName && document.activeElement !== hostName) hostName.value = gameState.charName;
-    if (guestTitle && document.activeElement !== guestTitle) guestTitle.value = gameState.title;
-    if (guestAnsInput && document.activeElement !== guestAnsInput) guestAnsInput.value = gameState.guestAnswer || "";
+    // 3. 入力フォーム値の反映（アクティブでない場合）
+    const ht = document.getElementById('host-title-input');
+    const hn = document.getElementById('host-name-input');
+    const gt = document.getElementById('guest-title-input');
+    const ga = document.getElementById('guest-answer-input');
+
+    if (ht && document.activeElement !== ht) ht.value = gameState.title || "";
+    if (hn && document.activeElement !== hn) hn.value = gameState.charName || "";
+    if (gt && document.activeElement !== gt) gt.value = gameState.title || "";
+    if (ga && document.activeElement !== ga) ga.value = gameState.guestAnswer || "";
 
     const imgEl = document.getElementById('display-image');
     const maskEl = document.getElementById('image-mask');
@@ -812,6 +638,7 @@
 
     const isHostPerspective = (currentRole === 'host' || currentRole === 'viewonly_host');
 
+    // 4. 画像エリアの描画
     if (gameState.imageSrc) {
       dropHint.classList.add('hidden');
 
@@ -846,30 +673,26 @@
     } else {
       imgEl.classList.add('hidden');
       maskEl.classList.add('hidden');
-      if (isHostPerspective) {
-        dropHint.classList.remove('hidden');
-      } else {
-        dropHint.classList.add('hidden');
-      }
+      if (isHostPerspective) dropHint.classList.remove('hidden'); else dropHint.classList.add('hidden');
 
       if (hostPrevImg) hostPrevImg.classList.add('hidden');
       if (hostPrevText) hostPrevText.classList.remove('hidden');
-      if (guestPrevImg) {
-        guestPrevImg.src = "";
-        guestPrevImg.classList.add('hidden');
-      }
+      if (guestPrevImg) guestPrevImg.classList.add('hidden');
       if (guestPrevMask) guestPrevMask.classList.add('hidden');
       if (guestPrevText) guestPrevText.classList.remove('hidden');
     }
 
-    if (isHostPerspective || gameState.isRevealed) {
+    // 5. キャラクター名（回答）の表示分け
+    if (isHostPerspective) {
+      // 出題者側：正解のキャラクター名を常時表示
       nameEl.innerText = gameState.charName || "";
-      
+    } else if (gameState.isRevealed) {
+      // 回答者側（ネタバレ後）：正解を表示、回答ボタンを隠す
+      nameEl.innerText = gameState.charName || "";
       const viewonlyControls = document.getElementById('viewonly-guest-controls');
-      if (viewonlyControls && gameState.isRevealed) {
-        viewonlyControls.classList.add('hidden');
-      }
+      if (viewonlyControls) viewonlyControls.classList.add('hidden');
     } else {
+      // 回答者側（ネタバレ前）：文字入力があれば末尾に「？」を付与して表示
       const answerText = gameState.guestAnswer ? gameState.guestAnswer.trim() : "";
       nameEl.innerText = answerText !== "" ? `${answerText}？` : "？";
     }
