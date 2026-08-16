@@ -19,7 +19,7 @@
   input[type="text"], select { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
   button { padding: 10px 20px; background: #007bff; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
   button:hover { background: #0056b3; }
-  button:disabled { background: #ccc; cursor: not-allowed; }
+  button:disabled { background: #ccc !important; cursor: not-allowed !important; }
   .card { border: 1px solid #ddd; padding: 15px; border-radius: 6px; margin-top: 15px; background: #fafafa; }
   .hidden { display: none !important; }
 
@@ -125,6 +125,7 @@
     <div id="host-controls">
       <div style="margin-bottom: 10px;">
         回答者の状態: <span id="seen-status" class="status-badge status-unseen">未閲覧</span>
+        <button id="btn-host-reset-guest" style="background:#ff9800; margin-left:15px; padding: 4px 10px;">回答者の状態のみリセット</button>
       </div>
       
       <div class="input-with-preview">
@@ -181,7 +182,10 @@
           <span id="guest-preview-text" style="color:#aaa; font-size:0.8rem; text-align:center;">画像未セット</span>
         </div>
       </div>
-      <button id="btn-reveal" style="background:#28a745; margin-top:10px;">答えを表示</button>
+      <div style="margin-top:10px; display:flex; gap:10px;">
+        <button id="btn-reveal" style="background:#28a745; flex:1;">答えを表示</button>
+        <button id="btn-guest-reset" style="background:#ff9800; flex:1;">回答状態をリセット</button>
+      </div>
     </div>
 
     <div style="margin-top: 15px;">
@@ -268,7 +272,6 @@
         }
       };
       
-      // 親画面に現在のデータを要求
       localBroadcast.postMessage({ type: 'REQ_LOCAL_SYNC' });
     } else {
       document.title = `無知ネーター - ルーム: ${roomId}`;
@@ -300,6 +303,26 @@
     initRoomEvents();
   } else {
     initEntranceEvents();
+  }
+
+  function updateRoleLockState() {
+    const roleHostRadio = document.getElementById('role-host');
+    const roleGuestRadio = document.getElementById('role-guest');
+    const confirmBtn = document.getElementById('btn-confirm-role');
+
+    if (!roleHostRadio || !roleGuestRadio || !confirmBtn) return;
+
+    // 答えが表示済み（isRevealed: true）または非確定状態なら変更許可
+    // 役割確定後かつ未表示（isRevealed: false）のときは無効化
+    if (!gameState.isRevealed) {
+      roleHostRadio.disabled = true;
+      roleGuestRadio.disabled = true;
+      confirmBtn.disabled = true;
+    } else {
+      roleHostRadio.disabled = false;
+      roleGuestRadio.disabled = false;
+      confirmBtn.disabled = false;
+    }
   }
 
   function initPeerP2P() {
@@ -474,6 +497,15 @@
     broadcast({ type: 'SEEN_NOTIFY' });
   }
 
+  function resetGuestState() {
+    gameState.isRevealed = false;
+    gameState.guestAnswer = "";
+    const ga = document.getElementById('guest-answer-input');
+    if (ga) ga.value = "";
+    broadcast({ type: 'RESET_SEEN' });
+    syncState();
+  }
+
   function compressImage(file, callback) {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -562,7 +594,9 @@
     });
 
     document.getElementById('btn-reveal').addEventListener('click', triggerReveal);
-    
+    document.getElementById('btn-guest-reset').addEventListener('click', resetGuestState);
+    document.getElementById('btn-host-reset-guest').addEventListener('click', resetGuestState);
+
     document.getElementById('btn-viewonly-reveal').addEventListener('click', () => {
       if (localBroadcast) {
         localBroadcast.postMessage({ type: 'REVEAL_ACTION' });
@@ -604,18 +638,17 @@
   }
 
   function renderUI() {
-    // 1. 作品名の描画
+    updateRoleLockState();
+
     const titleEl = document.getElementById('display-title');
     titleEl.style.color = gameState.titleColor;
     titleEl.style.textShadow = generateCleanStrokeCSS(gameState.titleEnableS1, gameState.titleS1Color, gameState.titleEnableS2, gameState.titleS2Color);
     titleEl.innerText = gameState.title || "";
 
-    // 2. キャラクタースタイルの設定
     const nameEl = document.getElementById('display-name');
     nameEl.style.color = gameState.charColor;
     nameEl.style.textShadow = generateCleanStrokeCSS(gameState.charEnableS1, gameState.charS1Color, gameState.charEnableS2, gameState.charS2Color);
 
-    // 3. 入力フォーム値の反映（アクティブでない場合）
     const ht = document.getElementById('host-title-input');
     const hn = document.getElementById('host-name-input');
     const gt = document.getElementById('guest-title-input');
@@ -638,7 +671,6 @@
 
     const isHostPerspective = (currentRole === 'host' || currentRole === 'viewonly_host');
 
-    // 4. 画像エリアの描画
     if (gameState.imageSrc) {
       dropHint.classList.add('hidden');
 
@@ -682,19 +714,19 @@
       if (guestPrevText) guestPrevText.classList.remove('hidden');
     }
 
-    // 5. キャラクター名（回答）の表示分け
+    const viewonlyControls = document.getElementById('viewonly-guest-controls');
+
     if (isHostPerspective) {
-      // 出題者側：正解のキャラクター名を常時表示
       nameEl.innerText = gameState.charName || "";
     } else if (gameState.isRevealed) {
-      // 回答者側（ネタバレ後）：正解を表示、回答ボタンを隠す
       nameEl.innerText = gameState.charName || "";
-      const viewonlyControls = document.getElementById('viewonly-guest-controls');
       if (viewonlyControls) viewonlyControls.classList.add('hidden');
     } else {
-      // 回答者側（ネタバレ前）：文字入力があれば末尾に「？」を付与して表示
       const answerText = gameState.guestAnswer ? gameState.guestAnswer.trim() : "";
       nameEl.innerText = answerText !== "" ? `${answerText}？` : "？";
+      if (viewonlyControls && currentRole === 'viewonly_guest') {
+        viewonlyControls.classList.remove('hidden');
+      }
     }
   }
 </script>
