@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>オンライン無知ネーター</title>
+<!-- PeerJS (WebRTC通信用ライブラリ) の読み込み -->
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <style>
   :root {
     --bg-color: #00ff00; /* 初期クロマキー色（緑） */
@@ -204,6 +206,7 @@
       <strong>【現在の参加者】</strong>
       <div>出題者: <span id="panel-hosts-list">なし</span></div>
       <div>回答者: <span id="panel-guests-list">なし</span></div>
+      <div style="font-size: 0.8rem; color: #666; margin-top: 4px;">接続状態: <span id="connection-status">接続中...</span></div>
     </div>
 
     <div class="role-selector">
@@ -307,7 +310,7 @@
     </div>
   </div>
 
-  <!-- メイン表示領域（作品名、キャラクター画像、キャラクター名、参加メンバー） -->
+  <!-- メイン表示領域 -->
   <div id="display-area">
     <div id="display-title" class="styled-text styled-title"></div>
     
@@ -319,13 +322,11 @@
 
     <div id="display-name" class="styled-text"></div>
 
-    <!-- キャラクター名の下に表示される出題者・回答者リスト -->
     <div id="members-display-area" class="members-display">
       <div id="display-hosts-line" class="hosts-line"></div>
       <div id="display-guests-line" class="guests-line"></div>
     </div>
 
-    <!-- Cタブ（回答者表示専用タブ）専用の「答えを表示」ボタン領域 -->
     <div id="viewonly-guest-controls" class="display-controls hidden">
       <button id="btn-viewonly-reveal" style="background:#28a745; font-size:1.2rem; padding:12px 30px;">答えを表示</button>
     </div>
@@ -333,13 +334,14 @@
 </div>
 
 <script>
-  let channel = null;
+  let peer = null;
+  let connections = {}; // 接続しているピアのリスト
   let roomId = "";
   let myUserName = "";
   let myId = "user_" + Math.random().toString(36).substr(2, 9);
   let currentRole = "host";
-  
   let roomMembers = {};
+  let localBroadcast = new BroadcastChannel('muchinator_local_sync');
 
   let gameState = {
     title: "",
@@ -348,7 +350,6 @@
     imageSrc: "",
     isRevealed: false,
     
-    // スタイル
     titleColor: "#000000",
     titleEnableS1: true,
     titleS1Color: "#ffffff",
@@ -384,35 +385,144 @@
       if (currentRole === 'viewonly_guest') {
         document.getElementById('viewonly-guest-controls').classList.remove('hidden');
       }
+
+      // 同一ブラウザの同端末同期
+      localBroadcast.onmessage = (e) => {
+        if (e.data.type === 'STATE_UPDATE') {
+          gameState = { ...gameState, ...e.data.data };
+          renderUI();
+        } else if (e.data.type === 'MEMBERS_UPDATE') {
+          roomMembers = e.data.data;
+          updateMembersUI();
+        }
+      };
+      localBroadcast.postMessage({ type: 'REQ_LOCAL_SYNC' });
+
     } else {
       document.title = `オンライン無知ネーター - ルーム: ${roomId} (${myUserName})`;
+      initPeerNet();
     }
 
-    channel = new BroadcastChannel(`muchinator_${roomId}`);
     initRoomEvents();
-
-    sendPresence();
-    channel.postMessage({ type: 'SYNC_REQUEST' });
-
-    setInterval(() => {
-      sendPresence();
-      cleanOfflineMembers();
-    }, 2000);
 
   } else {
     initEntranceEvents();
   }
 
+  // P2P ネットワーク初期化
+  function initPeerNet() {
+    const peerId = `muchinator_${roomId}_${myId}`;
+    peer = new Peer(peerId);
+
+    peer.on('open', (id) => {
+      updateConnStatus("接続完了");
+      // ホスト用Peerへ接続試行
+      connectToHost();
+    });
+
+    peer.on('connection', (conn) => {
+      setupConnection(conn);
+    });
+
+    peer.on('error', (err) => {
+      console.warn("PeerJS Notification:", err.type);
+    });
+
+    setInterval(() => {
+      sendPresence();
+      cleanOfflineMembers();
+    }, 2000);
+  }
+
+  function updateConnStatus(msg) {
+    const el = document.getElementById('connection-status');
+    if (el) el.innerText = msg;
+  }
+
+  function connectToHost() {
+    const hostPeerId = `muchinator_host_${roomId}`;
+    
+    // ホスト権限として接続登録
+    if (currentRole === 'host') {
+      const hostPeer = new Peer(hostPeerId);
+      hostPeer.on('open', () => {
+        updateConnStatus("ホストとして待機中");
+      });
+      hostPeer.on('connection', (conn) => {
+        setupConnection(conn);
+      });
+    } else {
+      const conn = peer.connect(hostPeerId);
+      if (conn) setupConnection(conn);
+    }
+  }
+
+  function setupConnection(conn) {
+    connections[conn.peer] = conn;
+
+    conn.on('open', () => {
+      updateConnStatus("プレイヤー接続中");
+      sendPresence();
+      broadcast({ type: 'STATE_UPDATE', data: gameState });
+    });
+
+    conn.on('data', (data) => {
+      handleNetworkMessage(data);
+    });
+
+    conn.on('close', () => {
+      delete connections[conn.peer];
+    });
+  }
+
+  function broadcast(data) {
+    for (let id in connections) {
+      if (connections[id] && connections[id].open) {
+        connections[id].send(data);
+      }
+    }
+    localBroadcast.postMessage(data);
+  }
+
+  function handleNetworkMessage(msg) {
+    const { type, data } = msg;
+    if (type === 'STATE_UPDATE') {
+      gameState = { ...gameState, ...data };
+      renderUI();
+      localBroadcast.postMessage({ type: 'STATE_UPDATE', data: gameState });
+    } else if (type === 'PRESENCE') {
+      roomMembers[msg.id] = {
+        name: msg.name,
+        role: msg.role,
+        time: Date.now()
+      };
+      updateMembersUI();
+      localBroadcast.postMessage({ type: 'MEMBERS_UPDATE', data: roomMembers });
+    } else if (type === 'SEEN_NOTIFY') {
+      const seenStatus = document.getElementById('seen-status');
+      if(seenStatus) {
+        seenStatus.innerText = "閲覧済み";
+        seenStatus.className = "status-badge status-seen";
+      }
+    } else if (type === 'RESET_SEEN') {
+      const seenStatus = document.getElementById('seen-status');
+      if(seenStatus) {
+        seenStatus.innerText = "未閲覧";
+        seenStatus.className = "status-badge status-unseen";
+      }
+    }
+  }
+
   function sendPresence() {
     if (currentRole !== 'viewonly_host' && currentRole !== 'viewonly_guest') {
-      channel.postMessage({
+      const msg = {
         type: 'PRESENCE',
         id: myId,
         name: myUserName,
         role: currentRole,
         time: Date.now()
-      });
-      
+      };
+      broadcast(msg);
       roomMembers[myId] = { name: myUserName, role: currentRole, time: Date.now() };
       updateMembersUI();
     }
@@ -422,12 +532,15 @@
     const now = Date.now();
     let updated = false;
     for (const id in roomMembers) {
-      if (now - roomMembers[id].time > 5000) {
+      if (now - roomMembers[id].time > 6000) {
         delete roomMembers[id];
         updated = true;
       }
     }
-    if (updated) updateMembersUI();
+    if (updated) {
+      updateMembersUI();
+      localBroadcast.postMessage({ type: 'MEMBERS_UPDATE', data: roomMembers });
+    }
   }
 
   function updateMembersUI() {
@@ -460,13 +573,6 @@
       const rId = document.getElementById('create-room-id').value.trim();
       if (!username || !rId) return alert('ユーザー名とルームIDを入力してください');
 
-      const roomChannel = new BroadcastChannel(`muchinator_lobby_${rId}`);
-      roomChannel.onmessage = (e) => {
-        if (e.data.type === 'PING') {
-          roomChannel.postMessage({ type: 'PONG', host: username });
-        }
-      };
-
       window.open(`${window.location.pathname}?room=${encodeURIComponent(rId)}&host=${encodeURIComponent(username)}&user=${encodeURIComponent(username)}`, '_blank');
     });
 
@@ -474,68 +580,41 @@
       const rId = document.getElementById('search-room-id').value.trim();
       if (!rId) return alert('検索するルームIDを入力してください');
 
-      const tempChannel = new BroadcastChannel(`muchinator_lobby_${rId}`);
-      tempChannel.postMessage({ type: 'PING' });
+      const tempPeer = new Peer();
+      tempPeer.on('open', () => {
+        const conn = tempPeer.connect(`muchinator_host_${rId}`);
+        let found = false;
 
-      tempChannel.onmessage = (e) => {
-        if (e.data.type === 'PONG') {
-          document.getElementById('result-host-name').innerText = e.data.host;
+        conn.on('open', () => {
+          found = true;
+          document.getElementById('result-host-name').innerText = "接続可能";
           document.getElementById('search-result').classList.remove('hidden');
           
           document.getElementById('btn-join-room').onclick = () => {
             const username = document.getElementById('username-input').value.trim() || "ゲスト";
-            window.open(`${window.location.pathname}?room=${encodeURIComponent(rId)}&host=${encodeURIComponent(e.data.host)}&user=${encodeURIComponent(username)}`, '_blank');
+            window.open(`${window.location.pathname}?room=${encodeURIComponent(rId)}&user=${encodeURIComponent(username)}`, '_blank');
+            tempPeer.destroy();
           };
-        }
-      };
+        });
 
-      setTimeout(() => {
-        if (document.getElementById('search-result').classList.contains('hidden')) {
-          alert('部屋が見つかりませんでした。');
-        }
-      }, 500);
+        setTimeout(() => {
+          if (!found) {
+            alert('部屋が見つかりませんでした。ルームIDが正しく入力されているか確認してください。');
+            tempPeer.destroy();
+          }
+        }, 3000);
+      });
     });
   }
 
   function triggerReveal() {
     gameState.isRevealed = true;
-    // 答えが表示されたので役割選択のロックを解除
     lockRoleSelector(false);
     syncState();
-    channel.postMessage({ type: 'SEEN_NOTIFY' });
+    broadcast({ type: 'SEEN_NOTIFY' });
   }
 
   function initRoomEvents() {
-    channel.onmessage = (e) => {
-      const { type, data } = e.data;
-      if (type === 'STATE_UPDATE') {
-        gameState = { ...gameState, ...data };
-        renderUI();
-      } else if (type === 'SYNC_REQUEST') {
-        channel.postMessage({ type: 'STATE_UPDATE', data: gameState });
-        sendPresence();
-      } else if (type === 'PRESENCE') {
-        roomMembers[e.data.id] = {
-          name: e.data.name,
-          role: e.data.role,
-          time: e.data.time
-        };
-        updateMembersUI();
-      } else if (type === 'SEEN_NOTIFY') {
-        const seenStatus = document.getElementById('seen-status');
-        if(seenStatus) {
-          seenStatus.innerText = "閲覧済み";
-          seenStatus.className = "status-badge status-seen";
-        }
-      } else if (type === 'RESET_SEEN') {
-        const seenStatus = document.getElementById('seen-status');
-        if(seenStatus) {
-          seenStatus.innerText = "未閲覧";
-          seenStatus.className = "status-badge status-unseen";
-        }
-      }
-    };
-
     const btnOpenDisplay = document.getElementById('btn-open-display');
     if (btnOpenDisplay) {
       btnOpenDisplay.addEventListener('click', () => {
@@ -544,7 +623,6 @@
       });
     }
 
-    // 役割決定ボタン
     const btnConfirmRole = document.getElementById('btn-confirm-role');
     if (btnConfirmRole) {
       btnConfirmRole.addEventListener('click', () => {
@@ -558,7 +636,6 @@
         } else {
           document.getElementById('host-controls').classList.add('hidden');
           document.getElementById('guest-controls').classList.remove('hidden');
-          // 回答者に決定した時点で、答えが表示されるまで役割変更をロック
           if (!gameState.isRevealed) {
             lockRoleSelector(true);
           }
@@ -630,14 +707,10 @@
     });
 
     const btnReveal = document.getElementById('btn-reveal');
-    if (btnReveal) {
-      btnReveal.addEventListener('click', triggerReveal);
-    }
+    if (btnReveal) btnReveal.addEventListener('click', triggerReveal);
 
     const btnViewonlyReveal = document.getElementById('btn-viewonly-reveal');
-    if (btnViewonlyReveal) {
-      btnViewonlyReveal.addEventListener('click', triggerReveal);
-    }
+    if (btnViewonlyReveal) btnViewonlyReveal.addEventListener('click', triggerReveal);
 
     const btnReset = document.getElementById('btn-reset');
     if (btnReset) {
@@ -652,7 +725,7 @@
           if (hostName) hostName.value = "";
           if (guestTitle) guestTitle.value = "";
           if (guestAnswer) guestAnswer.value = "";
-          channel.postMessage({ type: 'RESET_SEEN' });
+          broadcast({ type: 'RESET_SEEN' });
         } else {
           gameState.isRevealed = false;
           gameState.guestAnswer = "";
@@ -676,7 +749,7 @@
 
   function syncState() {
     renderUI();
-    channel.postMessage({ type: 'STATE_UPDATE', data: gameState });
+    broadcast({ type: 'STATE_UPDATE', data: gameState });
   }
 
   function generateCleanStrokeCSS(s1Enable, s1Color, s2Enable, s2Color) {
