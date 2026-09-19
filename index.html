@@ -27,6 +27,28 @@
   .card { border: 1px solid #ddd; padding: 15px; border-radius: 6px; margin-top: 15px; background: #fafafa; }
   .hidden { display: none !important; }
 
+  /* ルーム選択ボタン群 */
+  .room-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
+    margin-top: 15px;
+  }
+  .btn-room {
+    padding: 15px 10px;
+    font-size: 1.1rem;
+    background: #28a745;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+    text-align: center;
+  }
+  .btn-room:hover {
+    background: #218838;
+  }
+
   /* Bタブ & Cタブ（ルーム画面）用スタイル */
   body.room-mode {
     background-color: var(--bg-color);
@@ -175,25 +197,13 @@
 
   <hr>
 
-  <h2>ルームを作る</h2>
-  <div class="form-group">
-    <label>作成するルームID</label>
-    <input type="text" id="create-room-id" placeholder="例: room123">
-  </div>
-  <button id="btn-create-room">ルームを作成して開く</button>
-
-  <hr>
-
-  <h2>ルームに入る</h2>
-  <div class="form-group">
-    <label>検索するルームID</label>
-    <input type="text" id="search-room-id" placeholder="例: room123">
-  </div>
-  <button id="btn-search-room">検索</button>
-
-  <div id="search-result" class="card hidden">
-    <p>ホスト名: <strong id="result-host-name">-</strong></p>
-    <button id="btn-join-room">部屋に入る</button>
+  <h2>入室するルームを選択（1〜5）</h2>
+  <div class="room-grid">
+    <button class="btn-room" data-room="1">ルーム 1</button>
+    <button class="btn-room" data-room="2">ルーム 2</button>
+    <button class="btn-room" data-room="3">ルーム 3</button>
+    <button class="btn-room" data-room="4">ルーム 4</button>
+    <button class="btn-room" data-room="5">ルーム 5</button>
   </div>
 </div>
 
@@ -386,7 +396,6 @@
 
   const urlParams = new URLSearchParams(window.location.search);
   const paramRoom = urlParams.get('room');
-  const paramHost = urlParams.get('host');
   const paramUser = urlParams.get('user');
   const paramViewRole = urlParams.get('viewrole');
 
@@ -396,10 +405,10 @@
     document.body.classList.add('room-mode');
     
     roomId = paramRoom;
-    myUserName = paramUser || paramHost || "ゲストユーザー";
+    myUserName = paramUser || "ゲストユーザー";
 
     if (paramViewRole) {
-      document.title = `オンライン無知ネーター - 表示画面（${paramViewRole === 'host' ? '出題者' : '回答者'}）`;
+      document.title = `オンライン無知ネーター - ルーム${roomId} 表示画面（${paramViewRole === 'host' ? '出題者' : '回答者'}）`;
       document.getElementById('control-panel').classList.add('hidden');
       currentRole = paramViewRole === 'host' ? 'viewonly_host' : 'viewonly_guest';
 
@@ -407,10 +416,10 @@
         document.getElementById('viewonly-guest-controls').classList.remove('hidden');
       }
     } else {
-      document.title = `オンライン無知ネーター - ルーム: ${roomId} (${myUserName})`;
+      document.title = `オンライン無知ネーター - ルーム ${roomId} (${myUserName})`;
     }
 
-    channel = new BroadcastChannel(`muchinator_${roomId}`);
+    channel = new BroadcastChannel(`muchinator_room_${roomId}`);
     initRoomEvents();
 
     sendPresence();
@@ -477,45 +486,15 @@
   }
 
   function initEntranceEvents() {
-    document.getElementById('btn-create-room').addEventListener('click', () => {
-      const username = document.getElementById('username-input').value.trim();
-      const rId = document.getElementById('create-room-id').value.trim();
-      if (!username || !rId) return alert('ユーザー名とルームIDを入力してください');
+    const roomButtons = document.querySelectorAll('.btn-room');
+    roomButtons.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const usernameInput = document.getElementById('username-input').value.trim();
+        const username = usernameInput || "ゲスト";
+        const selectedRoom = e.target.getAttribute('data-room');
 
-      const roomChannel = new BroadcastChannel(`muchinator_lobby_${rId}`);
-      roomChannel.onmessage = (e) => {
-        if (e.data.type === 'PING') {
-          roomChannel.postMessage({ type: 'PONG', host: username });
-        }
-      };
-
-      window.open(`${window.location.pathname}?room=${encodeURIComponent(rId)}&host=${encodeURIComponent(username)}&user=${encodeURIComponent(username)}`, '_blank');
-    });
-
-    document.getElementById('btn-search-room').addEventListener('click', () => {
-      const rId = document.getElementById('search-room-id').value.trim();
-      if (!rId) return alert('検索するルームIDを入力してください');
-
-      const tempChannel = new BroadcastChannel(`muchinator_lobby_${rId}`);
-      tempChannel.postMessage({ type: 'PING' });
-
-      tempChannel.onmessage = (e) => {
-        if (e.data.type === 'PONG') {
-          document.getElementById('result-host-name').innerText = e.data.host;
-          document.getElementById('search-result').classList.remove('hidden');
-          
-          document.getElementById('btn-join-room').onclick = () => {
-            const username = document.getElementById('username-input').value.trim() || "ゲスト";
-            window.open(`${window.location.pathname}?room=${encodeURIComponent(rId)}&host=${encodeURIComponent(e.data.host)}&user=${encodeURIComponent(username)}`, '_blank');
-          };
-        }
-      };
-
-      setTimeout(() => {
-        if (document.getElementById('search-result').classList.contains('hidden')) {
-          alert('部屋が見つかりませんでした。');
-        }
-      }, 500);
+        window.open(`${window.location.pathname}?room=${encodeURIComponent(selectedRoom)}&user=${encodeURIComponent(username)}`, '_blank');
+      });
     });
   }
 
