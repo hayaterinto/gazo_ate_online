@@ -7,7 +7,7 @@
 <style>
   :root {
     --bg-color: #00ff00; /* 初期クロマキー色（緑） */
-    --frame-bg-color: #000000; /* 額縁内の初期色（黒） */
+    --frame-bg-color: #ffffff; /* 額縁内の初期色（白） */
   }
   body {
     font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", MeiYo, sans-serif;
@@ -137,11 +137,18 @@
     font-size: 0.9rem;
   }
 
-  /* 額縁＆画像ディスプレイ */
+  /* 額縁＆画像ディスプレイ Wrapper */
+  .frame-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    margin: 20px auto;
+  }
+
   .frame-container {
     width: 320px;
     height: 320px;
-    margin: 20px auto;
     border: 12px solid #8B4513;
     border-radius: 8px;
     box-shadow: inset 0 0 10px #000, 0 5px 15px rgba(0,0,0,0.3);
@@ -151,23 +158,57 @@
     align-items: center;
     position: relative;
     overflow: hidden;
+    cursor: grab;
+    touch-action: none; /* スマホでのスクロール干渉を防止 */
+  }
+  .frame-container:active {
+    cursor: grabbing;
   }
   .frame-container img {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
-    transition: transform 0.1s ease-out; /* 滑らかに拡縮 */
+    position: absolute;
+    user-select: none;
+    -webkit-user-drag: none;
   }
+
+  /* 額縁横の拡大スライダー */
+  .side-slider-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 300px;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.8);
+    padding: 10px 5px;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  }
+  .side-slider-container input[type="range"] {
+    writing-mode: vertical-lr;
+    direction: rtl;
+    width: 25px;
+    height: 220px;
+    cursor: pointer;
+  }
+  .side-slider-label {
+    font-size: 0.8rem;
+    font-weight: bold;
+    margin-bottom: 5px;
+  }
+
   .mask-overlay {
     position: absolute;
     top: 0; left: 0; width: 100%; height: 100%;
     background-color: var(--frame-bg-color);
-    color: #fff;
+    color: #333;
     font-size: 5rem;
     display: flex;
     justify-content: center;
     align-items: center;
     font-weight: bold;
+    pointer-events: none;
   }
   .status-badge {
     padding: 5px 10px;
@@ -183,6 +224,19 @@
     text-align: center;
     margin-top: 20px;
   }
+  
+  /* ファイル選択ボタン用スタイル */
+  .file-upload-btn {
+    display: inline-block;
+    padding: 6px 12px;
+    background: #6c757d;
+    color: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    margin-top: 8px;
+  }
+  .file-upload-btn:hover { background: #5a6268; }
 </style>
 </head>
 <body>
@@ -253,17 +307,13 @@
         </div>
       </div>
       
-      <!-- 額縁の設定（背景色 ＆ サイズ調整） -->
+      <!-- 額縁の設定（背景色） -->
       <div class="style-box">
         <strong>【額縁の設定】</strong>
         <div class="color-picker-group">
           <div class="color-set">
             <label>額縁の中の色:</label>
-            <input type="color" id="frame-bg-color-picker" value="#000000">
-          </div>
-          <div class="color-set">
-            <label>画像の大きさ: <span id="scale-value-label">100%</span></label>
-            <input type="range" id="image-scale-picker" min="50" max="200" value="100" step="5">
+            <input type="color" id="frame-bg-color-picker" value="#ffffff">
           </div>
         </div>
       </div>
@@ -338,10 +388,24 @@
   <div id="display-area">
     <div id="display-title" class="styled-text styled-title"></div>
     
-    <div class="frame-container" id="drop-zone">
-      <img id="display-image" src="" class="hidden">
-      <div id="image-mask" class="mask-overlay hidden">？</div>
-      <div id="drop-hint" style="color:#fff; text-align:center; padding:10px;">画像をここにドラッグ＆ドロップ</div>
+    <div class="frame-wrapper">
+      <div class="frame-container" id="drop-zone">
+        <img id="display-image" src="" class="hidden">
+        <div id="image-mask" class="mask-overlay hidden">？</div>
+        <div id="drop-hint" style="color:#333; text-align:center; padding:10px;">
+          画像をここにドラッグ＆ドロップ<br>
+          <label class="file-upload-btn">
+            画像を選択
+            <input type="file" id="file-input" accept="image/*" class="hidden">
+          </label>
+        </div>
+      </div>
+
+      <!-- 画像のすぐ横に配置した拡大縮小バー -->
+      <div class="side-slider-container" id="side-slider-box">
+        <span class="side-slider-label" id="side-scale-label">100%</span>
+        <input type="range" id="side-image-scale-picker" min="50" max="300" value="100" step="5">
+      </div>
     </div>
 
     <div id="display-name" class="styled-text"></div>
@@ -377,8 +441,10 @@
     
     // 背景色設定（クロマキー ＆ 額縁内）
     bgColor: "#00ff00",
-    frameBgColor: "#000000",
+    frameBgColor: "#ffffff",
     imageScale: 100, // 画像の拡大倍率 (%)
+    imageOffsetX: 0, // 画像の位置オフセット X
+    imageOffsetY: 0, // 画像の位置オフセット Y
 
     // スタイル
     titleColor: "#000000",
@@ -421,6 +487,7 @@
 
     channel = new BroadcastChannel(`muchinator_room_${roomId}`);
     initRoomEvents();
+    initImageDragEvents();
 
     sendPresence();
     channel.postMessage({ type: 'SYNC_REQUEST' });
@@ -585,10 +652,10 @@
       });
     }
 
-    // 画像サイズ（拡大率）の設定
-    const imageScalePicker = document.getElementById('image-scale-picker');
-    if (imageScalePicker) {
-      imageScalePicker.addEventListener('input', (e) => {
+    // 画像サイズ（拡大率）の設定 - 額縁横スライダー
+    const sideImageScalePicker = document.getElementById('side-image-scale-picker');
+    if (sideImageScalePicker) {
+      sideImageScalePicker.addEventListener('input', (e) => {
         gameState.imageScale = parseInt(e.target.value, 10);
         syncState();
       });
@@ -631,22 +698,37 @@
     const guestAnswer = document.getElementById('guest-answer-input');
     if (guestAnswer) guestAnswer.addEventListener('input', (e) => { gameState.guestAnswer = e.target.value; syncState(); });
 
+    // 画像の読み込み処理関数
+    const handleFile = (file) => {
+      if (file && file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          gameState.imageSrc = event.target.result;
+          gameState.imageOffsetX = 0;
+          gameState.imageOffsetY = 0;
+          gameState.imageScale = 100;
+          syncState();
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+
     const dropZone = document.getElementById('drop-zone');
     dropZone.addEventListener('dragover', (e) => e.preventDefault());
     dropZone.addEventListener('drop', (e) => {
       e.preventDefault();
       if (currentRole !== 'host') return;
-
-      const file = e.dataTransfer.files[0];
-      if (file && file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          gameState.imageSrc = event.target.result;
-          syncState();
-        };
-        reader.readAsDataURL(file);
-      }
+      handleFile(e.dataTransfer.files[0]);
     });
+
+    // ファイル選択インプット連動
+    const fileInput = document.getElementById('file-input');
+    if (fileInput) {
+      fileInput.addEventListener('change', (e) => {
+        if (currentRole !== 'host') return;
+        handleFile(e.target.files[0]);
+      });
+    }
 
     const btnReveal = document.getElementById('btn-reveal');
     if (btnReveal) {
@@ -668,6 +750,8 @@
           gameState.imageSrc = "";
           gameState.isRevealed = false;
           gameState.imageScale = 100;
+          gameState.imageOffsetX = 0;
+          gameState.imageOffsetY = 0;
           if (hostTitle) hostTitle.value = "";
           if (hostName) hostName.value = "";
           if (guestTitle) guestTitle.value = "";
@@ -683,6 +767,57 @@
         syncState();
       });
     }
+  }
+
+  // 画像ドラッグ・スワイプ移動イベント処理
+  function initImageDragEvents() {
+    const dropZone = document.getElementById('drop-zone');
+    let isDragging = false;
+    let startX = 0, startY = 0;
+    let initialOffsetX = 0, initialOffsetY = 0;
+
+    const startDrag = (clientX, clientY) => {
+      if (currentRole !== 'host' || !gameState.imageSrc) return;
+      isDragging = true;
+      startX = clientX;
+      startY = clientY;
+      initialOffsetX = gameState.imageOffsetX || 0;
+      initialOffsetY = gameState.imageOffsetY || 0;
+    };
+
+    const moveDrag = (clientX, clientY) => {
+      if (!isDragging) return;
+      const dx = clientX - startX;
+      const dy = clientY - startY;
+      gameState.imageOffsetX = initialOffsetX + dx;
+      gameState.imageOffsetY = initialOffsetY + dy;
+      renderUI();
+    };
+
+    const endDrag = () => {
+      if (isDragging) {
+        isDragging = false;
+        syncState();
+      }
+    };
+
+    // マウスイベント
+    dropZone.addEventListener('mousedown', (e) => startDrag(e.clientX, e.clientY));
+    window.addEventListener('mousemove', (e) => moveDrag(e.clientX, e.clientY));
+    window.addEventListener('mouseup', endDrag);
+
+    // タッチイベント（スマホ対応）
+    dropZone.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        startDrag(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    });
+    window.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 1) {
+        moveDrag(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    });
+    window.addEventListener('touchend', endDrag);
   }
 
   function lockRoleSelector(lock) {
@@ -724,7 +859,7 @@
   function renderUI() {
     // 背景色（クロマキー）と額縁内カラーの反映
     document.body.style.setProperty('--bg-color', gameState.bgColor || "#00ff00");
-    document.body.style.setProperty('--frame-bg-color', gameState.frameBgColor || "#000000");
+    document.body.style.setProperty('--frame-bg-color', gameState.frameBgColor || "#ffffff");
 
     const bgColorPicker = document.getElementById('bg-color-picker');
     if (bgColorPicker && document.activeElement !== bgColorPicker) {
@@ -733,19 +868,30 @@
 
     const frameBgColorPicker = document.getElementById('frame-bg-color-picker');
     if (frameBgColorPicker && document.activeElement !== frameBgColorPicker) {
-      frameBgColorPicker.value = gameState.frameBgColor || "#000000";
+      frameBgColorPicker.value = gameState.frameBgColor || "#ffffff";
     }
 
     // 画像サイズ（倍率）コントロールの同期
-    const imageScalePicker = document.getElementById('image-scale-picker');
-    const scaleValueLabel = document.getElementById('scale-value-label');
+    const sideImageScalePicker = document.getElementById('side-image-scale-picker');
+    const sideScaleLabel = document.getElementById('side-scale-label');
+    const sideSliderBox = document.getElementById('side-slider-box');
     const currentScale = gameState.imageScale || 100;
 
-    if (imageScalePicker && document.activeElement !== imageScalePicker) {
-      imageScalePicker.value = currentScale;
+    if (sideImageScalePicker && document.activeElement !== sideImageScalePicker) {
+      sideImageScalePicker.value = currentScale;
     }
-    if (scaleValueLabel) {
-      scaleValueLabel.innerText = `${currentScale}%`;
+    if (sideScaleLabel) {
+      sideScaleLabel.innerText = `${currentScale}%`;
+    }
+
+    // 出題者以外の時に拡大スライダーを隠すか調整
+    const isHostPerspective = (currentRole === 'host' || currentRole === 'viewonly_host');
+    if (sideSliderBox) {
+      if (isHostPerspective) {
+        sideSliderBox.classList.remove('hidden');
+      } else {
+        sideSliderBox.classList.add('hidden');
+      }
     }
 
     const titleEl = document.getElementById('display-title');
@@ -783,11 +929,11 @@
     const guestPrevMask = document.getElementById('guest-preview-mask');
     const guestPrevText = document.getElementById('guest-preview-text');
 
-    const isHostPerspective = (currentRole === 'host' || currentRole === 'viewonly_host');
-
-    // 画像の倍率を CSS transform に反映
+    // 画像の倍率と位置オフセットを Transform に反映
+    const offsetX = gameState.imageOffsetX || 0;
+    const offsetY = gameState.imageOffsetY || 0;
     if (imgEl) {
-      imgEl.style.transform = `scale(${currentScale / 100})`;
+      imgEl.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${currentScale / 100})`;
     }
 
     if (gameState.imageSrc) {
@@ -805,7 +951,7 @@
 
       if (hostPrevImg) {
         hostPrevImg.src = gameState.imageSrc;
-        hostPrevImg.style.transform = `scale(${currentScale / 100})`;
+        hostPrevImg.style.transform = `translate(${offsetX * 0.375}px, ${offsetY * 0.375}px) scale(${currentScale / 100})`;
         hostPrevImg.classList.remove('hidden');
         if (hostPrevText) hostPrevText.classList.add('hidden');
       }
@@ -813,7 +959,7 @@
       if (guestPrevImg) {
         if (gameState.isRevealed) {
           guestPrevImg.src = gameState.imageSrc;
-          guestPrevImg.style.transform = `scale(${currentScale / 100})`;
+          guestPrevImg.style.transform = `translate(${offsetX * 0.375}px, ${offsetY * 0.375}px) scale(${currentScale / 100})`;
           guestPrevImg.classList.remove('hidden');
           if (guestPrevMask) guestPrevMask.classList.add('hidden');
         } else {
