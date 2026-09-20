@@ -561,6 +561,7 @@
   let myUserName = "";
   let myId = "u_" + Math.random().toString(36).substr(2, 7);
   let currentRole = "host"; 
+  let bc = null; // BroadcastChannel (同一ブラウザ・タブ間シグナリング)
 
   let roomMembers = {};
   const ALL_TEAMS = ['A', 'B', 'C', 'D', 'E'];
@@ -650,36 +651,44 @@
     initEntranceEvents();
   }
 
-  /* ================= PeerJS オンライン通信基盤 ================= */
+  /* ================= PeerJS オンライン通信基盤 (バッティング完全回避版) ================= */
   function initPeerJS() {
-    // 固定のハブID（ルームIDそのもの）
-    const roomHubId = `muchinator_room_key_${roomId}`;
-    // 自分専用のランダムPeerID
-    const myPeerId = `muchinator_peer_${roomId}_${myId}`;
+    // 完全にユニークなPeerIDを作成（これにより絶対にID競合・バッティングが発生しない）
+    const myPeerId = `muchinator_r${roomId}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    
+    peer = new Peer(myPeerId);
 
-    // まず自分がハブ（部屋のホスト）になれるか試す
-    peer = new Peer(roomHubId);
+    // 同一ネットワーク・ブラウザ内通知用BroadcastChannel
+    try {
+      bc = new BroadcastChannel(`muchinator_room_channel_${roomId}`);
+      bc.onmessage = (e) => {
+        if (e.data && e.data.type === 'NEW_PEER_JOINED') {
+          if (e.data.peerId !== peer.id) {
+            connectToPeer(e.data.peerId);
+          }
+        }
+      };
+    } catch (e) {
+      console.warn("BroadcastChannel not supported", e);
+    }
 
     peer.on('open', (id) => {
-      updateOnlineStatus("ルーム作成完了 (ホスト)");
+      updateOnlineStatus(`ルーム${roomId} 接続完了`);
+      
+      // 新規参加通知を他のタブへアナウンス
+      if (bc) {
+        bc.postMessage({ type: 'NEW_PEER_JOINED', peerId: id });
+      }
+
+      setupPeerListeners();
     });
 
     peer.on('error', (err) => {
-      // 既にそのルームキーが存在する場合（誰かが先に入室している場合）
-      if (err.type === 'unavailable-id') {
-        if (peer) peer.destroy();
-        // 自分固有のIDでPeerを作り直し、既存のルームハブに接続する
-        peer = new Peer(myPeerId);
-        peer.on('open', () => {
-          updateOnlineStatus("ルームに参加完了");
-          connectToPeer(roomHubId);
-        });
-        peer.on('connection', (conn) => setupConnection(conn));
-      } else {
-        console.warn("PeerJS Notification:", err);
-      }
+      console.error("PeerJS Error:", err);
     });
+  }
 
+  function setupPeerListeners() {
     peer.on('connection', (conn) => {
       setupConnection(conn);
     });
@@ -689,11 +698,11 @@
     const statusEl = document.getElementById('online-status');
     statusEl.innerText = text;
     statusEl.className = "status-online";
-    document.getElementById('my-peer-id-display').innerText = `Room: ${roomId} / ID: ${myId}`;
+    document.getElementById('my-peer-id-display').innerText = `Room: ${roomId} / ID: ${peer.id.slice(-8)}`;
   }
 
   function connectToPeer(targetPeerId) {
-    if (connections[targetPeerId]) return;
+    if (connections[targetPeerId] || targetPeerId === peer.id) return;
     const conn = peer.connect(targetPeerId);
     setupConnection(conn);
   }
@@ -701,7 +710,7 @@
   function setupConnection(conn) {
     conn.on('open', () => {
       connections[conn.peer] = conn;
-      // 新しい接続先へ自分の存在を通知し、状態を同期
+      // 接続確立時、同期リクエストと存在通知を行う
       conn.send({ type: 'SYNC_REQUEST' });
       sendPresence();
     });
@@ -712,6 +721,10 @@
 
     conn.on('close', () => {
       delete connections[conn.peer];
+    });
+
+    conn.on('error', (err) => {
+      console.warn("Connection error:", err);
     });
   }
 
@@ -725,7 +738,7 @@
     } else if (data.type === 'PRESENCE') {
       roomMembers[data.id] = { name: data.name, role: data.role, time: Date.now(), peerId: conn.peer };
       
-      // メッシュ状に繋げるため、知らない他の参加者のPeerIDがあればそちらにも相互接続
+      // ルーム内の他メンバーのID一覧が送られてきたら網状に相互接続する
       if (data.otherPeers && Array.isArray(data.otherPeers)) {
         data.otherPeers.forEach(pId => {
           if (pId !== peer.id && !connections[pId]) {
@@ -753,7 +766,7 @@
         name: myUserName,
         role: currentRole,
         time: Date.now(),
-        otherPeers: Object.keys(connections)
+        otherPeers: [peer.id, ...Object.keys(connections)]
       };
       broadcast(pData);
       roomMembers[myId] = { name: myUserName, role: currentRole, time: Date.now() };
