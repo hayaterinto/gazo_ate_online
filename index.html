@@ -35,8 +35,10 @@
 
   /* ルーム選択ボタン群 */
   .room-section { margin-top: 20px; padding: 15px; border-radius: 8px; background: #f8f9fa; border: 1px solid #e9ecef; }
-  .room-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-top: 10px; }
-  .btn-room { padding: 15px 10px; font-size: 1rem; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; text-align: center; }
+  .room-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin-top: 10px; }
+  .btn-room { padding: 12px 8px; font-size: 0.95rem; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; text-align: center; }
+  
+  /* ゲーム別の色分け */
   .btn-room-muchi { background: #28a745; }
   .btn-room-q20 { background: #17a2b8; }
   .btn-room-mirishira { background: #fd7e14; }
@@ -47,10 +49,6 @@
   
   .styled-text { font-size: 2.5rem; font-weight: 900; text-align: center; margin: 10px 0; display: block; width: 100%; word-break: break-all; min-height: 1.2em; }
   .styled-title { font-size: 1.8rem; }
-
-  .members-display { text-align: center; margin-top: 15px; font-size: 1.3rem; font-weight: 900; }
-  .members-display .hosts-line { color: #000000; text-shadow: 2px 2px 0 #ffffff, -2px 2px 0 #ffffff; }
-  .members-display .guests-line { color: #ffffff; text-shadow: 2px 2px 0 #000000, -2px 2px 0 #000000; }
 
   .member-list-panel { background: #e9ecef; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 0.9rem; }
 
@@ -77,14 +75,39 @@
 
   <hr>
 
+  <!-- 無知ネーター -->
   <div class="room-section">
-    <h2>無知ネーターの部屋（1〜5）</h2>
+    <h2>無知ネーターの部屋</h2>
     <div class="room-grid">
-      <button class="btn-room btn-room-muchi" data-room="1">ルーム 1</button>
-      <button class="btn-room btn-room-muchi" data-room="2">ルーム 2</button>
-      <button class="btn-room btn-room-muchi" data-room="3">ルーム 3</button>
-      <button class="btn-room btn-room-muchi" data-room="4">ルーム 4</button>
-      <button class="btn-room btn-room-muchi" data-room="5">ルーム 5</button>
+      <button class="btn-room btn-room-muchi" data-room="無知ネーター_1">ルーム 1</button>
+      <button class="btn-room btn-room-muchi" data-room="無知ネーター_2">ルーム 2</button>
+      <button class="btn-room btn-room-muchi" data-room="無知ネーター_3">ルーム 3</button>
+      <button class="btn-room btn-room-muchi" data-room="無知ネーター_4">ルーム 4</button>
+      <button class="btn-room btn-room-muchi" data-room="無知ネーター_5">ルーム 5</button>
+    </div>
+  </div>
+
+  <!-- 20の質問 -->
+  <div class="room-section">
+    <h2>20の質問の部屋</h2>
+    <div class="room-grid">
+      <button class="btn-room btn-room-q20" data-room="20の質問_1">ルーム 1</button>
+      <button class="btn-room btn-room-q20" data-room="20の質問_2">ルーム 2</button>
+      <button class="btn-room btn-room-q20" data-room="20の質問_3">ルーム 3</button>
+      <button class="btn-room btn-room-q20" data-room="20の質問_4">ルーム 4</button>
+      <button class="btn-room btn-room-q20" data-room="20の質問_5">ルーム 5</button>
+    </div>
+  </div>
+
+  <!-- ミリしらプロフ -->
+  <div class="room-section">
+    <h2>ミリしらプロフの部屋</h2>
+    <div class="room-grid">
+      <button class="btn-room btn-room-mirishira" data-room="ミリしらプロフ_1">ルーム 1</button>
+      <button class="btn-room btn-room-mirishira" data-room="ミリしらプロフ_2">ルーム 2</button>
+      <button class="btn-room btn-room-mirishira" data-room="ミリしらプロフ_3">ルーム 3</button>
+      <button class="btn-room btn-room-mirishira" data-room="ミリしらプロフ_4">ルーム 4</button>
+      <button class="btn-room btn-room-mirishira" data-room="ミリしらプロフ_5">ルーム 5</button>
     </div>
   </div>
 </div>
@@ -94,7 +117,7 @@
   <div class="control-panel" id="control-panel">
     <div class="status-bar">
       <span>通信状態: <span id="online-status" class="status-offline">接続中...</span></span>
-      <span>部屋番号: <strong id="room-id-display">-</strong></span>
+      <span>部屋名: <strong id="room-id-display">-</strong></span>
     </div>
 
     <div class="member-list-panel">
@@ -148,8 +171,6 @@
 </div>
 
 <script>
-  // SkyWay 認証APIキー（テスト用パブリックキーまたは自身のKeyを設定）
-  // ※より安定した運用には https://skyway.ntt.com/ から無料キーを取得して書き換えてください
   const SKYWAY_APP_ID = "YOUR_SKYWAY_APP_ID"; 
 
   let room = null;
@@ -189,12 +210,10 @@
     });
   }
 
-  /* SkyWay Room 接続ロジック */
   async function initSkyWayRoom() {
     try {
       const { SkyWayContext, SkyWayRoom, SkyWayAuthToken } = skywayRoom;
 
-      // トークン生成（本来はバックエンド生成推奨ですがクライアント側で完結可能）
       const token = new SkyWayAuthToken({
         jti: Math.random().toString(36).substring(2),
         iat: Math.floor(Date.now() / 1000),
@@ -215,7 +234,7 @@
             ]
           }
         }
-      }).encode('YOUR_SECRET_KEY'); // キー未設定時は疑似P2P
+      }).encode('YOUR_SECRET_KEY');
 
       const context = await SkyWayContext.Create(token);
       room = await SkyWayRoom.FindOrCreate(context, {
@@ -226,11 +245,9 @@
       member = await room.join({ name: `${myUserName}_${currentRole}` });
       updateOnlineStatus("接続完了");
 
-      // データ送信用ストリーム作成
       dataStream = await SkyWayContext.CreateDataStream();
       await member.publish(dataStream);
 
-      // 他の参加者が入ってきたとき
       room.onMemberJoined.add((e) => {
         updateMembers();
         broadcastState();
@@ -238,7 +255,6 @@
 
       room.onMemberLeft.add(() => updateMembers());
 
-      // データの受信処理
       member.onPublicationSubscribed.add(async (e) => {
         if (e.publication.publisher.id !== member.id) {
           const { stream } = await member.subscribe(e.publication.id);
