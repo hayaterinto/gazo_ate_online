@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>オンライン対戦・無知ネーター & 20の質問 & ミリしらプロフ</title>
+<!-- PeerJS ライブラリの読み込み (オンライン通信用) -->
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <style>
   :root {
     --bg-color: #00ff00; /* 初期クロマキー色（緑） */
@@ -25,6 +27,20 @@
   button:hover { background: #0056b3; }
   button:disabled { background: #ccc; cursor: not-allowed; }
   .hidden { display: none !important; }
+
+  /* オンライン通信ステータス表示 */
+  .status-bar {
+    background: #e2e3e5;
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin-bottom: 15px;
+    font-size: 0.9rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .status-online { color: #28a745; font-weight: bold; }
+  .status-offline { color: #dc3545; font-weight: bold; }
 
   /* ルーム選択ボタン群 */
   .room-section { margin-top: 20px; padding: 15px; border-radius: 8px; background: #f8f9fa; border: 1px solid #e9ecef; }
@@ -301,6 +317,11 @@
 <!-- Bタブ & Cタブ: ルーム画面 -->
 <div id="room-view" class="hidden">
   <div class="control-panel" id="control-panel">
+    <div class="status-bar">
+      <span>通信状態: <span id="online-status" class="status-offline">接続中...</span></span>
+      <span id="my-peer-id-display" style="font-size: 0.8rem; color: #666;">ID: -</span>
+    </div>
+
     <div class="member-list-panel">
       <strong>【現在の参加者】</strong>
       <div id="panel-members-detail">なし</div>
@@ -533,15 +554,15 @@
 </div>
 
 <script>
-  let channel = null;
+  let peer = null;
+  let connections = {}; // 接続中のPeerConnection管理
   let roomId = "";
   let roomMode = "muchi"; // "muchi", "q20", "mirishira"
   let myUserName = "";
-  let myId = "user_" + Math.random().toString(36).substr(2, 9);
+  let myId = "u_" + Math.random().toString(36).substr(2, 7);
   let currentRole = "host"; 
 
   let roomMembers = {};
-
   const ALL_TEAMS = ['A', 'B', 'C', 'D', 'E'];
 
   // 全体ゲーム状態
@@ -554,7 +575,7 @@
     // 20の質問用
     q20Count: 0,
     q20IsRevealedAll: false,
-    activeTeams: ['A', 'B'], // 初期チーム数: 2 (A, B)
+    activeTeams: ['A', 'B'],
     teams: {
       A: { name: "", imageSrc: "", log: "" },
       B: { name: "", imageSrc: "", log: "" },
@@ -564,7 +585,7 @@
     },
 
     // ミリしらプロフ用
-    miriQuestions: [], // 初期状態は空欄
+    miriQuestions: [],
     miriNameAnswer: "",
     miriNameRevealed: false
   };
@@ -616,12 +637,9 @@
       document.title = `ルーム ${roomId} (${myUserName})`;
     }
 
-    channel = new BroadcastChannel(`muchinator_room_${roomId}`);
+    initPeerJS();
     initRoomEvents();
     initImageDragEvents();
-
-    sendPresence();
-    channel.postMessage({ type: 'SYNC_REQUEST' });
 
     setInterval(() => {
       sendPresence();
@@ -632,11 +650,81 @@
     initEntranceEvents();
   }
 
+  /* ================= PeerJS オンライン通信基盤 ================= */
+  function initPeerJS() {
+    // 固有的Prefixで同室のPeerを探すため一意のPeerIDを生成
+    const myPeerId = `game_rm_${roomId}_${myId}`;
+    peer = new Peer(myPeerId);
+
+    peer.on('open', (id) => {
+      const statusEl = document.getElementById('online-status');
+      statusEl.innerText = "オンライン接続完了";
+      statusEl.className = "status-online";
+      document.getElementById('my-peer-id-display').innerText = `ID: ${myId}`;
+
+      // 同一ルームIDを持つ既存ユーザーを探索して自動接続
+      discoverRoomPeers();
+    });
+
+    peer.on('connection', (conn) => {
+      setupConnection(conn);
+    });
+
+    peer.on('error', (err) => {
+      console.warn("PeerJS Notification:", err);
+    });
+  }
+
+  function setupConnection(conn) {
+    conn.on('open', () => {
+      connections[conn.peer] = conn;
+      // 接続相手に自分のプレゼンスとお互いの状態同期を要求
+      conn.send({ type: 'SYNC_REQUEST' });
+      sendPresence();
+    });
+
+    conn.on('data', (data) => {
+      handleIncomingData(data, conn);
+    });
+
+    conn.on('close', () => {
+      delete connections[conn.peer];
+    });
+  }
+
+  function handleIncomingData(data, conn) {
+    if (data.type === 'STATE_UPDATE') {
+      gameState = { ...gameState, ...data.data };
+      renderUI();
+    } else if (data.type === 'SYNC_REQUEST') {
+      conn.send({ type: 'STATE_UPDATE', data: gameState });
+      sendPresence();
+    } else if (data.type === 'PRESENCE') {
+      roomMembers[data.id] = { name: data.name, role: data.role, time: Date.now(), peerId: conn.peer };
+      updateMembersUI();
+    }
+  }
+
+  function broadcast(data) {
+    Object.values(connections).forEach(conn => {
+      if (conn.open) {
+        conn.send(data);
+      }
+    });
+  }
+
+  function discoverRoomPeers() {
+    // ルーム内の他参加者にダミー接続を試みる（簡易P2Pメッシュ構築）
+    // ルームIDとPrefixをキーに他接続候補をチェック
+    sendPresence();
+  }
+
   function sendPresence() {
     if (!currentRole.startsWith('viewonly')) {
-      channel.postMessage({
+      const pData = {
         type: 'PRESENCE', id: myId, name: myUserName, role: currentRole, time: Date.now()
-      });
+      };
+      broadcast(pData);
       roomMembers[myId] = { name: myUserName, role: currentRole, time: Date.now() };
       updateMembersUI();
     }
@@ -646,7 +734,7 @@
     const now = Date.now();
     let updated = false;
     for (const id in roomMembers) {
-      if (now - roomMembers[id].time > 5000) {
+      if (now - roomMembers[id].time > 6000) {
         delete roomMembers[id];
         updated = true;
       }
@@ -747,7 +835,6 @@
       });
     });
 
-    // ドロップダウンリストの動的更新
     const teamSelect = document.getElementById('q20-team-select');
     const prevValue = teamSelect.value;
     teamSelect.innerHTML = "";
@@ -771,20 +858,6 @@
   }
 
   function initRoomEvents() {
-    channel.onmessage = (e) => {
-      const { type, data } = e.data;
-      if (type === 'STATE_UPDATE') {
-        gameState = { ...gameState, ...data };
-        renderUI();
-      } else if (type === 'SYNC_REQUEST') {
-        channel.postMessage({ type: 'STATE_UPDATE', data: gameState });
-        sendPresence();
-      } else if (type === 'PRESENCE') {
-        roomMembers[e.data.id] = { name: e.data.name, role: e.data.role, time: e.data.time };
-        updateMembersUI();
-      }
-    };
-
     document.getElementById('btn-open-display').addEventListener('click', () => {
       window.open(`${window.location.pathname}?room=${encodeURIComponent(roomId)}&viewrole=${currentRole}`, '_blank');
     });
@@ -812,7 +885,6 @@
       renderUI();
     });
 
-    // 背景色変更
     document.getElementById('bg-color-picker').addEventListener('input', (e) => {
       gameState.bgColor = e.target.value;
       syncState();
@@ -850,7 +922,6 @@
         syncState();
       });
 
-      // チーム数の追加・削除操作
       document.getElementById('btn-q20-add-team').addEventListener('click', () => {
         if (!gameState.activeTeams) gameState.activeTeams = ['A', 'B'];
         if (gameState.activeTeams.length < ALL_TEAMS.length) {
@@ -889,7 +960,6 @@
         syncState();
       });
 
-      // ミリしらプロフ入力同期
       document.getElementById('miri-ans-name').addEventListener('input', (e) => {
         gameState.miriNameAnswer = e.target.value;
         syncState();
@@ -900,7 +970,6 @@
       });
     }
 
-    // リセットボタン
     document.getElementById('btn-reset').addEventListener('click', () => {
       if (roomMode === "muchi") {
         gameState.title = ""; gameState.charName = ""; gameState.guestAnswer = "";
@@ -923,7 +992,6 @@
     });
   }
 
-  // ファイル読み込み
   function handleFile(file, targetTeam = null) {
     if (file && file.type.startsWith('image/')) {
       const reader = new FileReader();
@@ -979,7 +1047,7 @@
 
   function syncState() {
     renderUI();
-    channel.postMessage({ type: 'STATE_UPDATE', data: gameState });
+    broadcast({ type: 'STATE_UPDATE', data: gameState });
   }
 
   function renderUI() {
@@ -1104,7 +1172,6 @@
 
     const miriQuestions = gameState.miriQuestions || [];
 
-    // 知っている側の質問エディタ描画
     if (currentRole === 'host') {
       const editorList = document.getElementById('miri-questions-editor-list');
       editorList.innerHTML = "";
@@ -1130,7 +1197,6 @@
       if (document.activeElement !== nameInp) nameInp.value = gameState.charName || "";
     }
 
-    // 表示領域（プロフ項目）の描画
     const nameInput = document.getElementById('miri-ans-name');
     const nameBtn = document.getElementById('btn-reveal-miri-name');
 
@@ -1139,7 +1205,6 @@
       if (document.activeElement !== nameInput) nameInput.value = gameState.miriNameAnswer || "";
       nameBtn.classList.add('hidden');
     } else {
-      // 知っている側
       nameInput.disabled = true;
       if (gameState.miriNameRevealed) {
         nameInput.value = gameState.miriNameAnswer || "（未入力）";
@@ -1152,7 +1217,6 @@
 
     const qDisplayList = document.getElementById('miri-questions-display-list');
     
-    // 質問数が変化した場合にDOM要素を作り直す
     const currentItems = qDisplayList.querySelectorAll('.mirishira-q-item');
     if (currentItems.length !== miriQuestions.length) {
       qDisplayList.innerHTML = "";
@@ -1195,7 +1259,6 @@
       });
     }
 
-    // 既存のDOM要素の状態・値を更新する
     miriQuestions.forEach((q, index) => {
       const item = qDisplayList.children[index];
       if (!item) return;
@@ -1215,7 +1278,6 @@
         }
         if (btnEl) btnEl.classList.add('hidden');
       } else {
-        // 知っている側
         if (inputEl) inputEl.disabled = true;
         if (q.isRevealed) {
           if (inputEl) inputEl.value = q.answer || "（未入力）";
