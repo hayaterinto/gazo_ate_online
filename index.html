@@ -652,33 +652,56 @@
 
   /* ================= PeerJS オンライン通信基盤 ================= */
   function initPeerJS() {
-    // 固有的Prefixで同室のPeerを探すため一意のPeerIDを生成
-    const myPeerId = `game_rm_${roomId}_${myId}`;
-    peer = new Peer(myPeerId);
+    // 固定のハブID（ルームIDそのもの）
+    const roomHubId = `muchinator_room_key_${roomId}`;
+    // 自分専用のランダムPeerID
+    const myPeerId = `muchinator_peer_${roomId}_${myId}`;
+
+    // まず自分がハブ（部屋のホスト）になれるか試す
+    peer = new Peer(roomHubId);
 
     peer.on('open', (id) => {
-      const statusEl = document.getElementById('online-status');
-      statusEl.innerText = "オンライン接続完了";
-      statusEl.className = "status-online";
-      document.getElementById('my-peer-id-display').innerText = `ID: ${myId}`;
+      updateOnlineStatus("ルーム作成完了 (ホスト)");
+    });
 
-      // 同一ルームIDを持つ既存ユーザーを探索して自動接続
-      discoverRoomPeers();
+    peer.on('error', (err) => {
+      // 既にそのルームキーが存在する場合（誰かが先に入室している場合）
+      if (err.type === 'unavailable-id') {
+        if (peer) peer.destroy();
+        // 自分固有のIDでPeerを作り直し、既存のルームハブに接続する
+        peer = new Peer(myPeerId);
+        peer.on('open', () => {
+          updateOnlineStatus("ルームに参加完了");
+          connectToPeer(roomHubId);
+        });
+        peer.on('connection', (conn) => setupConnection(conn));
+      } else {
+        console.warn("PeerJS Notification:", err);
+      }
     });
 
     peer.on('connection', (conn) => {
       setupConnection(conn);
     });
+  }
 
-    peer.on('error', (err) => {
-      console.warn("PeerJS Notification:", err);
-    });
+  function updateOnlineStatus(text) {
+    const statusEl = document.getElementById('online-status');
+    statusEl.innerText = text;
+    statusEl.className = "status-online";
+    document.getElementById('my-peer-id-display').innerText = `Room: ${roomId} / ID: ${myId}`;
+  }
+
+  function connectToPeer(targetPeerId) {
+    if (connections[targetPeerId]) return;
+    const conn = peer.connect(targetPeerId);
+    setupConnection(conn);
   }
 
   function setupConnection(conn) {
     conn.on('open', () => {
       connections[conn.peer] = conn;
-      // 接続相手に自分のプレゼンスとお互いの状態同期を要求
+      // 新しい接続先へ自分の存在を通知し、状態を同期
       conn.send({ type: 'SYNC_REQUEST' });
       sendPresence();
     });
@@ -701,6 +724,15 @@
       sendPresence();
     } else if (data.type === 'PRESENCE') {
       roomMembers[data.id] = { name: data.name, role: data.role, time: Date.now(), peerId: conn.peer };
+      
+      // メッシュ状に繋げるため、知らない他の参加者のPeerIDがあればそちらにも相互接続
+      if (data.otherPeers && Array.isArray(data.otherPeers)) {
+        data.otherPeers.forEach(pId => {
+          if (pId !== peer.id && !connections[pId]) {
+            connectToPeer(pId);
+          }
+        });
+      }
       updateMembersUI();
     }
   }
@@ -713,16 +745,15 @@
     });
   }
 
-  function discoverRoomPeers() {
-    // ルーム内の他参加者にダミー接続を試みる（簡易P2Pメッシュ構築）
-    // ルームIDとPrefixをキーに他接続候補をチェック
-    sendPresence();
-  }
-
   function sendPresence() {
     if (!currentRole.startsWith('viewonly')) {
       const pData = {
-        type: 'PRESENCE', id: myId, name: myUserName, role: currentRole, time: Date.now()
+        type: 'PRESENCE',
+        id: myId,
+        name: myUserName,
+        role: currentRole,
+        time: Date.now(),
+        otherPeers: Object.keys(connections)
       };
       broadcast(pData);
       roomMembers[myId] = { name: myUserName, role: currentRole, time: Date.now() };
