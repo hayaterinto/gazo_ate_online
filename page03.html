@@ -587,6 +587,7 @@
 
   let roomMembers = {};
   const ALL_TEAMS = ['A', 'B', 'C', 'D', 'E'];
+  let currentQ20TeamsKey = "";
 
   // 全体ゲーム初期状態
   let gameState = {
@@ -789,10 +790,15 @@
   }
 
   function setupQ20GridUI() {
+    const activeTeams = gameState.activeTeams || ['A', 'B'];
+    const activeKey = activeTeams.join(',');
+    
+    // チーム編成が変わっていない場合はDOMを再構築しない（文字入力フォーカス外れを防ぐ）
+    if (currentQ20TeamsKey === activeKey) return;
+    currentQ20TeamsKey = activeKey;
+
     const grid = document.getElementById('teams-grid');
     grid.innerHTML = "";
-    
-    const activeTeams = gameState.activeTeams || ['A', 'B'];
 
     activeTeams.forEach(teamKey => {
       const card = document.createElement('div');
@@ -1013,7 +1019,7 @@
               width = maxDim;
             } else {
               width = Math.round((width * maxDim) / height);
-              height = maxDim;
+              width = maxDim;
             }
           }
           canvas.width = width;
@@ -1109,12 +1115,18 @@
     if (gameState.imageSrc) {
       dropHint.classList.add('hidden');
       if (currentRole === 'host' || gameState.isRevealed) {
-        imgEl.src = gameState.imageSrc; imgEl.classList.remove('hidden'); maskEl.classList.add('hidden');
+        imgEl.src = gameState.imageSrc;
+        imgEl.classList.remove('hidden');
+        maskEl.classList.add('hidden');
       } else {
-        imgEl.src = ""; imgEl.classList.add('hidden'); maskEl.classList.remove('hidden');
+        // 回答者側かつ未オープン時は画像を表示せずマスクを表示
+        imgEl.src = "";
+        imgEl.classList.add('hidden');
+        maskEl.classList.remove('hidden');
       }
     } else {
-      imgEl.classList.add('hidden'); maskEl.classList.add('hidden');
+      imgEl.classList.add('hidden');
+      maskEl.classList.add('hidden');
       if (currentRole === 'host') dropHint.classList.remove('hidden');
     }
   }
@@ -1208,31 +1220,46 @@
 
     const miriQuestions = gameState.miriQuestions || [];
 
+    // 出題者（知っている側）のエディタ描画
     if (currentRole === 'host') {
       const editorList = document.getElementById('miri-questions-editor-list');
-      editorList.innerHTML = "";
-      miriQuestions.forEach((q) => {
-        const row = document.createElement('div');
-        row.className = "q-edit-row";
-        row.innerHTML = `
-          <input type="text" value="${q.title}" data-id="${q.id}" class="q-title-input" placeholder="質問タイトルを入力（例: 第一印象）">
-          <button class="btn-del-q" data-id="${q.id}">削除</button>
-        `;
-        editorList.appendChild(row);
+      const currentRows = editorList.querySelectorAll('.q-edit-row');
+      
+      // 質問数が一致しない場合のみDOM再構成
+      if (currentRows.length !== miriQuestions.length) {
+        editorList.innerHTML = "";
+        miriQuestions.forEach((q) => {
+          const row = document.createElement('div');
+          row.className = "q-edit-row";
+          row.innerHTML = `
+            <input type="text" value="${q.title}" data-id="${q.id}" class="q-title-input" placeholder="質問タイトルを入力（例: 第一印象）">
+            <button class="btn-del-q" data-id="${q.id}">削除</button>
+          `;
+          editorList.appendChild(row);
 
-        row.querySelector('.q-title-input').addEventListener('change', (e) => {
-          q.title = e.target.value;
-          syncState();
+          row.querySelector('.q-title-input').addEventListener('input', (e) => {
+            q.title = e.target.value;
+            syncState();
+          });
+          row.querySelector('.btn-del-q').addEventListener('click', () => {
+            gameState.miriQuestions = gameState.miriQuestions.filter(item => item.id !== q.id);
+            syncState();
+          });
         });
-        row.querySelector('.btn-del-q').addEventListener('click', () => {
-          gameState.miriQuestions = gameState.miriQuestions.filter(item => item.id !== q.id);
-          syncState();
+      } else {
+        miriQuestions.forEach((q, idx) => {
+          const input = currentRows[idx].querySelector('.q-title-input');
+          if (document.activeElement !== input) {
+            input.value = q.title || "";
+          }
         });
-      });
+      }
+
       const nameInp = document.getElementById('miri-host-name-input');
       if (document.activeElement !== nameInp) nameInp.value = gameState.charName || "";
     }
 
+    // 固定項目：キャラ名表示コントロール
     const nameInput = document.getElementById('miri-ans-name');
     const nameBtn = document.getElementById('btn-reveal-miri-name');
 
@@ -1251,9 +1278,10 @@
       }
     }
 
+    // 動的質問リスト描画
     const qDisplayList = document.getElementById('miri-questions-display-list');
-    
     const currentItems = qDisplayList.querySelectorAll('.mirishira-q-item');
+    
     if (currentItems.length !== miriQuestions.length) {
       qDisplayList.innerHTML = "";
       miriQuestions.forEach((q) => {
@@ -1295,6 +1323,7 @@
       });
     }
 
+    // 状態を各入力項目に反映
     miriQuestions.forEach((q, index) => {
       const item = qDisplayList.children[index];
       if (!item) return;
@@ -1313,7 +1342,7 @@
           }
         }
         if (btnEl) btnEl.classList.add('hidden');
-      } else {
+      } else { // host側（知っている側）
         if (inputEl) inputEl.disabled = true;
         if (q.isRevealed) {
           if (inputEl) inputEl.value = q.answer || "（未入力）";
